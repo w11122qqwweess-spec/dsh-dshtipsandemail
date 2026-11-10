@@ -11,7 +11,7 @@ import {
 } from './lib/store.js';
 
 export const name = 'dsh-dshtipsandemail';
-export const inject = ['tools', 'connection', 'sessionController', 'workingDirectory'];
+export const inject = ['tools', 'connection', 'sessionController', 'workingDirectory', 'systemPrompt'];
 
 function compileSchema(value) {
   if (Array.isArray(value)) return value.map(compileSchema);
@@ -149,6 +149,56 @@ function registerTools(ctx, store) {
   };
 
   add({
+    name: `${TOOL_PREFIX}_tip`,
+    description: 'Submit one concise tip after completing a concrete task. Records the specific task, the single reusable lesson, the author and the server time. Use it once per task, not per turn.',
+    parameters: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        task: { type: 'string', description: 'specific task just completed, at most 160 characters' },
+        focus: { type: 'string', description: 'single most important lesson or result, at most 280 characters' },
+        tags: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'optional tags, at most 8',
+        },
+      },
+      required: ['task', 'focus'],
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          ok: { type: 'boolean', required: true },
+          id: { type: 'string', required: true },
+          task: { type: 'string', required: true },
+          focus: { type: 'string', required: true },
+          author: { type: 'string', required: true },
+          createdAt: { type: 'integer', required: true },
+        },
+      },
+      render: (_args, value) => [{ type: 'text', text: `Tip recorded at ${new Date(value.createdAt).toISOString()}: ${value.task} — ${value.focus}` }],
+    },
+    execute: async (args, exec) => {
+      const task = text(args.task, 'task', 160);
+      const focus = text(args.focus, 'focus', 280);
+      const post = store.post({
+        title: task,
+        body: focus,
+        tags: args.tags,
+        author: exec?.agent?.id ?? 'DSH',
+        kind: 'tip',
+        task,
+        focus,
+      });
+      return { ok: true, id: post.id, task: post.task, focus: post.focus, author: post.author, createdAt: post.createdAt };
+    },
+    isConcurrencySafe: () => false,
+    timeoutMs: 10000,
+  });
+
+  add({
     name: `${TOOL_PREFIX}_post`,
     description: 'Publish a post to the DSH board. Use it for durable notes, findings, questions, or handoffs that other Sessions should see.',
     parameters: {
@@ -222,6 +272,9 @@ function registerTools(ctx, store) {
                 author: { type: 'string', required: true },
                 createdAt: { type: 'integer', required: true },
                 replies: { type: 'integer', required: true },
+                kind: { type: 'string' },
+                task: { type: 'string' },
+                focus: { type: 'string' },
               },
             },
           },
@@ -243,6 +296,9 @@ function registerTools(ctx, store) {
           author: post.author,
           createdAt: post.createdAt,
           replies: post.replies.length,
+          kind: post.kind === 'tip' ? 'tip' : 'post',
+          ...(post.task ? { task: post.task } : {}),
+          ...(post.focus ? { focus: post.focus } : {}),
         }));
       return { ok: true, posts };
     },
@@ -537,6 +593,16 @@ function registerRoutes(ctx, store) {
 
 export function apply(ctx) {
   const store = new TipsAndEmailStore();
+  ctx.effect(() => ctx.systemPrompt.section({
+    name: 'dshtips-task-tips',
+    order: 870,
+    text: [
+      '## Task tips',
+      'After completing one concrete task (including a simple one), call `dshtips_tip` exactly once before your final answer.',
+      'Keep it short: `task` names the specific work you completed; `focus` is the single reusable lesson or result that matters; the tool records the time.',
+      'Do not paste the full output, do not include secrets, and do not submit duplicate tips for the same task. Skip tips for pure conversation, greetings, or unfinished work.',
+    ].join('\n'),
+  }));
   ctx.effect(() => registerTools(ctx, store));
   ctx.effect(() => registerRoutes(ctx, store));
 }

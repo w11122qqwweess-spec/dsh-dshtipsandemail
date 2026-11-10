@@ -27,6 +27,9 @@ window.__ModuleLoader__.load({
         'forum.replyPlaceholder': '写回复…',
         'forum.replies': '{n} 条回复',
         'forum.by': '由 {author}',
+        'forum.tip': 'TIP',
+        'forum.task': '具体任务',
+        'forum.focus': '重点',
         'forum.detailEmpty': '选择左侧帖子查看内容',
         'mail.new': '写邮件',
         'mail.empty': '邮箱是空的',
@@ -73,6 +76,9 @@ window.__ModuleLoader__.load({
         'forum.replyPlaceholder': 'Write a reply…',
         'forum.replies': '{n} replies',
         'forum.by': 'by {author}',
+        'forum.tip': 'TIP',
+        'forum.task': 'Task',
+        'forum.focus': 'Focus',
         'forum.detailEmpty': 'Select a post to read it',
         'mail.new': 'Compose',
         'mail.empty': 'Mailbox is empty',
@@ -129,6 +135,9 @@ window.__ModuleLoader__.load({
       .dte-detail-meta { margin-top: 4px; font-size: 11px; color: var(--dsw-alias-label-secondary); }
       .dte-body { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; line-height: 1.65; color: var(--dsw-alias-label-primary); }
       .dte-tags { display: flex; flex-wrap: wrap; gap: 5px; margin: 8px 0 0; }
+      .dte-tip-badge { display: inline-block; font-size: 9px; font-weight: 700; letter-spacing: .08em; color: var(--dsw-alias-brand-primary); border: 1px solid var(--dsw-alias-brand-primary); border-radius: 4px; padding: 1px 4px; margin-right: 5px; }
+      .dte-tip-label { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--dsw-alias-label-secondary); margin-top: 12px; }
+      .dte-tip-value { font-size: 13px; line-height: 1.55; margin-top: 3px; overflow-wrap: anywhere; }
       .dte-tag { font-size: 10px; color: var(--dsw-alias-label-secondary); border: 1px solid var(--dsw-alias-border-l1); border-radius: 999px; padding: 2px 7px; }
       .dte-thread { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
       .dte-thread-item { border: 1px solid var(--dsw-alias-border-l1); background: var(--dsw-alias-bg-layer-1); border-radius: 9px; padding: 10px; }
@@ -252,7 +261,7 @@ window.__ModuleLoader__.load({
             className: `dte-item${selected && selected.id === post.id ? ' selected' : ''}`,
             onClick: () => setSelectedId(post.id),
           },
-            h('span', { className: 'dte-item-title' }, post.title),
+            h('span', { className: 'dte-item-title' }, post.kind === 'tip' ? h('span', { className: 'dte-tip-badge' }, t('forum.tip')) : null, post.kind === 'tip' ? (post.task || post.title) : post.title),
             h('span', { className: 'dte-item-meta' }, `${t('forum.by', { author: post.author })} · ${t('forum.replies', { n: post.replies.length })}`),
           )),
         ),
@@ -278,7 +287,12 @@ window.__ModuleLoader__.load({
                 selected.tags.length > 0 ? h('div', { className: 'dte-tags' }, selected.tags.map((tag) => h('span', { className: 'dte-tag', key: tag }, `#${tag}`))) : null,
               ),
             ),
-            h('div', { className: 'dte-body' }, selected.body),
+            selected.kind === 'tip' ? h(React.Fragment, null,
+              h('div', { className: 'dte-tip-label' }, t('forum.task')),
+              h('div', { className: 'dte-tip-value' }, selected.task || selected.title),
+              h('div', { className: 'dte-tip-label' }, t('forum.focus')),
+              h('div', { className: 'dte-tip-value' }, selected.focus || selected.body),
+            ) : h('div', { className: 'dte-body' }, selected.body),
             h('div', { className: 'dte-replies' },
               h('div', { className: 'dte-item-meta' }, t('forum.replies', { n: selected.replies.length })),
               selected.replies.map((entry) => h('div', { className: 'dte-reply', key: entry.id },

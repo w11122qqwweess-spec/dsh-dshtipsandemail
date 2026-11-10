@@ -11,7 +11,14 @@ async function makeContext(root) {
   const routes = new Map();
   const created = [];
   const prompts = [];
+  const sections = [];
   const ctx = {
+    systemPrompt: {
+      section(section) {
+        sections.push(section);
+        return () => {};
+      },
+    },
     tools: {
       register(definition) {
         tools.set(definition.name, definition);
@@ -52,7 +59,7 @@ async function makeContext(root) {
     },
   };
   apply(ctx);
-  return { tools, routes, created, prompts };
+  return { tools, routes, created, prompts, sections };
 }
 
 function request(body) {
@@ -67,7 +74,7 @@ function request(body) {
   });
 }
 
-test('registers seven tools and two authenticated routes', async () => {
+test('registers eight tools and two authenticated routes', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'dte-plugin-'));
   process.env.DSH_PROFILE_DIR = root;
   const { tools, routes } = await makeContext(root);
@@ -79,11 +86,41 @@ test('registers seven tools and two authenticated routes', async () => {
     'dshtips_mail_send',
     'dshtips_post',
     'dshtips_reply',
+    'dshtips_tip',
   ]);
   assert.deepEqual([...routes.keys()].sort(), [
     '/api/dshtipsandemail/action',
     '/api/dshtipsandemail/state',
   ]);
+});
+
+test('every Agent gets the task-tip policy in its system prompt', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'dte-plugin-'));
+  process.env.DSH_PROFILE_DIR = root;
+  const { sections } = await makeContext(root);
+  assert.equal(sections.length, 1);
+  assert.match(sections[0].text, /dshtips_tip/);
+  assert.match(sections[0].text, /exactly once/);
+  assert.match(sections[0].text, /focus/);
+});
+
+test('an Agent can submit one timed tip with a specific task and focus', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'dte-plugin-'));
+  process.env.DSH_PROFILE_DIR = root;
+  const { tools } = await makeContext(root);
+  const tip = await tools.get('dshtips_tip').execute(
+    { task: 'Threaded mail replies', focus: 'Store replyTo and threadId so the UI can group replies.', tags: ['mail'] },
+    { agent: { id: 'session-abc' } },
+  );
+  assert.equal(tip.ok, true);
+  assert.equal(tip.task, 'Threaded mail replies');
+  assert.equal(tip.focus, 'Store replyTo and threadId so the UI can group replies.');
+  assert.equal(tip.author, 'session-abc');
+  assert.ok(Number.isFinite(tip.createdAt));
+  const list = await tools.get('dshtips_list').execute({ query: 'Threaded' });
+  assert.equal(list.posts[0].kind, 'tip');
+  assert.equal(list.posts[0].task, 'Threaded mail replies');
+  assert.equal(list.posts[0].focus, 'Store replyTo and threadId so the UI can group replies.');
 });
 
 test('agents can post, reply, send and read', async () => {
