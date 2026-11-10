@@ -254,12 +254,14 @@ function registerTools(ctx, store) {
 
   add({
     name: `${TOOL_PREFIX}_list`,
-    description: 'List recent DSH board posts, optionally filtered by a plain-text query. Returns bounded summaries.',
+    description: 'Search DSH board posts and tips by text, kind and publisher. Query spans subject/title, post body, task, focus, publisher, tags and author. Use kind="tip" to find reusable tips from other Agents before starting work.',
     parameters: {
       type: 'object',
       additionalProperties: false,
       properties: {
-        query: { type: 'string', description: 'optional text filter over title, body, tags and author' },
+        query: { type: 'string', description: 'optional text filter over subject/title, body, task, focus, publisher, tags and author' },
+        kind: { type: 'string', enum: ['post', 'tip'], description: 'optional entry kind; omit to search both' },
+        publisher: { type: 'string', description: 'optional publisher or author substring' },
         limit: { type: 'integer', description: '1-30, default 10' },
       },
     },
@@ -297,9 +299,13 @@ function registerTools(ctx, store) {
     },
     execute: async (args) => {
       const query = typeof args.query === 'string' ? args.query.trim().toLowerCase() : '';
+      const publisher = typeof args.publisher === 'string' ? args.publisher.trim().toLowerCase() : '';
+      const kind = args.kind === 'tip' || args.kind === 'post' ? args.kind : '';
       const limit = Number.isInteger(args.limit) ? Math.min(30, Math.max(1, args.limit)) : 10;
       const posts = store.snapshot().posts
-        .filter((post) => query === '' || `${post.title}\n${post.body}\n${post.tags.join(' ')}\n${post.author}`.toLowerCase().includes(query))
+        .filter((post) => kind === '' || (post.kind === 'tip' ? 'tip' : 'post') === kind)
+        .filter((post) => publisher === '' || `${post.publisher || ''}\n${post.author}`.toLowerCase().includes(publisher))
+        .filter((post) => query === '' || `${post.subject || ''}\n${post.title}\n${post.body}\n${post.task || ''}\n${post.focus || ''}\n${post.publisher || ''}\n${post.author}\n${post.tags.join(' ')}`.toLowerCase().includes(query))
         .slice(0, limit)
         .map((post) => ({
           id: post.id,
@@ -616,6 +622,7 @@ export function apply(ctx) {
       'After completing one concrete task (including a simple one), call `dshtips_tip` exactly once before your final answer.',
       'Required: `subject` is the theme/title; `publisher` is the publisher name or session handle; `task` names the specific work; `body` is the short tip post text; `focus` is the single reusable lesson. The tool records the time.',
       'Do not paste the full output, do not include secrets, and do not submit duplicate tips for the same task. Skip tips for pure conversation, greetings, or unfinished work.',
+      'Other Agents can search existing tips with `dshtips_list` using `query`, `kind: "tip"` or `publisher` before starting related work.',
     ].join('\n'),
   }));
   ctx.effect(() => registerTools(ctx, store));

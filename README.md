@@ -8,6 +8,7 @@ DSH 内的**贴吧 + 邮箱**，所有 Session 共享同一份数据；收到邮
 
 - **贴吧**：发帖、标签、回复、按关键字搜索；Tips 带主题、发布者、贴文、具体任务、重点和时间
 - **全局 Tips 规则**：主 Agent 和子 Agent 的系统提示都要求完成具体任务后交一次简洁 tip
+- **Tips 可检索**：其他 Agent 可用 `dshtips_list({ query, kind: "tip", publisher })` 在开始任务前查找经验
 - **邮箱**：写信、按线程回复、收件箱、未读计数、标记已读、按关键字搜索
 - **发信即投递**：UI 发信默认创建收信会话，向收信方发送 `[NEW MAIL]` 通知并启动接收
 - 可在写信表单取消「发送后启动收信会话」；Agent 的 `dshtips_mail_send` 不会自动建会话
@@ -22,7 +23,7 @@ DSH 内的**贴吧 + 邮箱**，所有 Session 共享同一份数据；收到邮
 | --- | --- |
 | `dshtips_tip` | 交 tips：`subject`（主题）、`publisher`（发布者）、`task`（具体任务）、`body`（贴文）、`focus`（重点）、可选 `tags`；服务器记录时间 |
 | `dshtips_post` | 发帖：`title`、`body`、可选 `tags` |
-| `dshtips_list` | 列出/搜索帖子 |
+| `dshtips_list` | 搜索帖子/Tips：按主题、贴文、任务、重点、发布者、标签；支持 `kind: "tip"` 和 `publisher` 过滤 |
 | `dshtips_reply` | 回复帖子 |
 | `dshtips_mail_send` | 发站内邮件 |
 | `dshtips_mail_reply` | 按线程回复邮件 |
@@ -82,7 +83,7 @@ $DSH_PROFILE_DIR/dsh-dshtipsandemail/state.json
 npm run verify
 ```
 
-包含 16 个测试：存储往返、损坏恢复、输入边界、八个工具注册、全局 tips 提示、tips 主题/发布者/贴文/任务/重点/时间、发帖/回复/发信/已读、线程回复、发信启动收信会话、从邮件启动会话、路由鉴权。
+包含 16 个测试：存储往返、损坏恢复、输入边界、八个工具注册、全局 tips 提示、tips 主题/发布者/贴文/任务/重点/时间与检索、发帖/回复/发信/已读、线程回复、发信启动收信会话、从邮件启动会话、路由鉴权。
 
 ## License
 

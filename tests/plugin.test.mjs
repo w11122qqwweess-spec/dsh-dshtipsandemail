@@ -123,7 +123,9 @@ test('an Agent can submit one timed tip with subject, publisher, task, post and 
   assert.equal(tip.focus, 'Store replyTo and threadId so the UI can group replies.');
   assert.equal(tip.author, 'session-abc');
   assert.ok(Number.isFinite(tip.createdAt));
-  const list = await tools.get('dshtips_list').execute({ query: 'Threaded' });
+  await tools.get('dshtips_post').execute({ title: 'Plain post', body: 'Not a tip' });
+  const list = await tools.get('dshtips_list').execute({ query: 'replyTo', kind: 'tip', publisher: 'session-abc' });
+  assert.equal(list.posts.length, 1);
   assert.equal(list.posts[0].kind, 'tip');
   assert.equal(list.posts[0].subject, 'Threaded mail replies');
   assert.equal(list.posts[0].publisher, 'session-abc');
