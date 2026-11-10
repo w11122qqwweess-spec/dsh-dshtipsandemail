@@ -4,7 +4,6 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { basename } from 'node:path';
 import {
   MAX_BODY,
   MAX_TITLE,
@@ -91,56 +90,24 @@ async function readBody(request) {
   return value;
 }
 
-async function workspaceIdForRecipient(ctx, to) {
-  const registry = ctx.get?.('workspaceRegistry');
-  if (registry === undefined || typeof registry.list !== 'function') return undefined;
-  const target = String(to).trim().toLowerCase();
-  if (target === '') return undefined;
-  const match = registry.list().find((workspace) =>
-    String(workspace.title).toLowerCase() === target
-    || basename(String(workspace.path)).toLowerCase() === target);
-  return match?.id;
-}
-
-async function workspaceIdForDirectory(ctx, directory) {
-  const registry = ctx.get?.('workspaceRegistry');
-  if (registry === undefined || typeof registry.resolveByPath !== 'function') return undefined;
-  try {
-    return (await registry.resolveByPath(directory))?.id;
-  } catch {
-    return undefined;
-  }
-}
-
 async function startSessionFromMail(ctx, store, message, currentSessionId, { delivery = false, signal, targetSessionId } = {}) {
   if (message.startedSessionId) return message.startedSessionId;
-  let sessionId = typeof targetSessionId === 'string' && targetSessionId !== '' ? targetSessionId : undefined;
-  if (sessionId !== undefined) {
-    const registry = ctx.get?.('workspaceRegistry');
-    if (registry !== undefined && typeof registry.unarchiveSession === 'function') {
-      await registry.unarchiveSession(sessionId);
+  let sessionId = typeof targetSessionId === 'string' && targetSessionId !== '' ? targetSessionId.trim() : undefined;
+  if (sessionId === undefined) {
+    const address = String(message.to ?? '').trim();
+    if (!/^session-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(address)) {
+      throw new Error('recipient must be an explicit mailbox address (session-<uuid>), not a workspace or label');
     }
-    try {
-      await ctx.sessionController.inspect(sessionId);
-    } catch {
-      throw new Error('targetSessionId does not identify an existing session');
-    }
-  } else {
-    let cwd;
-    if (typeof currentSessionId === 'string' && currentSessionId !== '') {
-      try {
-        cwd = (await ctx.sessionController.inspect(currentSessionId)).meta.cwd;
-      } catch {
-        cwd = undefined;
-      }
-    }
-    if (cwd === undefined) cwd = ctx.workingDirectory.defaultDirectory;
-    const recipientWorkspaceId = await workspaceIdForRecipient(ctx, message.to);
-    const workspaceId = recipientWorkspaceId ?? await workspaceIdForDirectory(ctx, cwd);
-    const created = await ctx.sessionController.create({
-      ...(workspaceId === undefined ? { cwd } : { workspaceId }),
-    });
-    sessionId = created.sessionId;
+    sessionId = address;
+  }
+  const registry = ctx.get?.('workspaceRegistry');
+  if (registry !== undefined && typeof registry.unarchiveSession === 'function') {
+    await registry.unarchiveSession(sessionId);
+  }
+  try {
+    await ctx.sessionController.inspect(sessionId);
+  } catch {
+    throw new Error('recipient mailbox does not identify an existing session');
   }
   const requestId = randomUUID();
   const oneLine = (value) => String(value).replace(/[\r\n]+/g, ' ').slice(0, 300);
@@ -396,12 +363,12 @@ function registerTools(ctx, store) {
 
   add({
     name: `${TOOL_PREFIX}_mail_send`,
-    description: 'Send an in-DSH mailbox message. Set deliver=true to start a recipient Session in the workspace named by `to` (or the current workspace) and deliver a NEW MAIL prompt.',
+    description: 'Send an in-DSH mailbox message. deliver=true requires an explicit mailbox address in `to` (session-<uuid>) or targetSessionId; workspace names and labels are rejected.',
     parameters: {
       type: 'object',
       additionalProperties: false,
       properties: {
-        to: { type: 'string', description: 'recipient label, default 我' },
+        to: { type: 'string', description: 'explicit mailbox address (session-<uuid>) for delivery; plain label for non-delivered mail' },
         subject: { type: 'string', description: 'subject, at most 200 characters' },
         body: { type: 'string', description: 'mail body, at most 20000 characters' },
         deliver: { type: 'boolean', description: 'deliver a NEW MAIL prompt after sending; default false' },

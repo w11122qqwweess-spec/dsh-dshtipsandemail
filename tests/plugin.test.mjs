@@ -6,6 +6,8 @@ import path from 'node:path';
 
 import { apply } from '../index.js';
 
+const SESSION = 'session-11111111-1111-1111-1111-111111111111';
+
 async function makeContext(root) {
   const tools = new Map();
   const routes = new Map();
@@ -170,27 +172,29 @@ test('archive only accepts a Session started by this mailbox', async () => {
   process.env.DSH_PROFILE_DIR = root;
   const { tools, archived } = await makeContext(root);
   await assert.rejects(() => tools.get('dshtips_archive').execute({ sessionId: 'session-unknown' }), /was not started/);
-  const mail = await tools.get('dshtips_mail_send').execute({ to: 'leidian', subject: 'Archive me', body: 'x', deliver: true });
+  const mail = await tools.get('dshtips_mail_send').execute({ to: SESSION, subject: 'Archive me', body: 'x', deliver: true });
   const result = await tools.get('dshtips_archive').execute({ sessionId: mail.sessionId });
   assert.equal(result.ok, true);
   assert.deepEqual(archived, [mail.sessionId]);
 });
 
-test('mail_send can deliver a NEW MAIL Session into the named workspace', async () => {
+test('mail_send rejects a workspace label but accepts an explicit session mailbox', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'dte-plugin-'));
   process.env.DSH_PROFILE_DIR = root;
   const { tools, created, prompts } = await makeContext(root);
+  await assert.rejects(
+    () => tools.get('dshtips_mail_send').execute({ to: 'leidian', subject: 'No', body: 'No', deliver: true }),
+    /explicit mailbox/,
+  );
   const mail = await tools.get('dshtips_mail_send').execute({
-    to: 'leidian',
+    to: SESSION,
     subject: '请回信',
-    body: '这是给 leidian 工作区 agent 的测试邮件。',
+    body: '这是给明确 Session 的测试邮件。',
     deliver: true,
   });
-  assert.equal(mail.sessionId, 'session-from-mail');
-  assert.equal(created.length, 1);
-  assert.equal(created[0].workspaceId, 'workspace-test');
+  assert.equal(mail.sessionId, SESSION);
+  assert.equal(created.length, 0);
   assert.match(prompts[0].content[0].text, /\[NEW MAIL\]/);
-  assert.match(prompts[0].content[0].text, /leidian/);
 });
 
 test('targetSessionId reuses an existing agent instead of creating a Session', async () => {
@@ -210,24 +214,24 @@ test('targetSessionId reuses an existing agent instead of creating a Session', a
   assert.deepEqual(unarchived, ['session-existing']);
 });
 
-test('a UI send starts a recipient Session with a NEW MAIL notice', async () => {
+test('a UI send uses the explicit session mailbox and never creates', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'dte-plugin-'));
   process.env.DSH_PROFILE_DIR = root;
   const { routes, created, prompts } = await makeContext(root);
   const response = await routes.get('/api/dshtipsandemail/action').fetch(request({
     action: 'send',
-    to: '收信方',
+    to: SESSION,
     subject: 'Handoff',
     body: 'Please take this over.',
     deliver: true,
   }));
   assert.equal(response.status, 200);
   const body = await response.json();
-  assert.equal(body.sessionId, 'session-from-mail');
-  assert.equal(created.length, 1);
+  assert.equal(body.sessionId, SESSION);
+  assert.equal(created.length, 0);
   assert.equal(prompts.length, 1);
   assert.match(prompts[0].content[0].text, /\[NEW MAIL\]/);
-  assert.equal(body.value.messages[0].startedSessionId, 'session-from-mail');
+  assert.equal(body.value.messages[0].startedSessionId, SESSION);
 });
 
 test('the UI action creates a threaded mail reply', async () => {
@@ -248,14 +252,13 @@ test('the UI action starts a Session from a mail and records the id', async () =
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'dte-plugin-'));
   process.env.DSH_PROFILE_DIR = root;
   const { tools, routes, created, prompts } = await makeContext(root);
-  const mail = await tools.get('dshtips_mail_send').execute({ subject: 'Start me', body: 'Run the task' });
+  const mail = await tools.get('dshtips_mail_send').execute({ to: SESSION, subject: 'Start me', body: 'Run the task' });
   const response = await routes.get('/api/dshtipsandemail/action').fetch(request({ action: 'start', messageId: mail.id }));
   assert.equal(response.status, 200);
   const body = await response.json();
-  assert.equal(body.sessionId, 'session-from-mail');
-  assert.equal(body.value.messages[0].startedSessionId, 'session-from-mail');
-  assert.equal(created.length, 1);
-  assert.equal(created[0].workspaceId, 'workspace-test');
+  assert.equal(body.sessionId, SESSION);
+  assert.equal(body.value.messages[0].startedSessionId, SESSION);
+  assert.equal(created.length, 0);
   assert.equal(prompts.length, 1);
   assert.match(prompts[0].content[0].text, /Start me/);
   assert.match(prompts[0].content[0].text, /Run the task/);
@@ -263,8 +266,8 @@ test('the UI action starts a Session from a mail and records the id', async () =
 
   const again = await routes.get('/api/dshtipsandemail/action').fetch(request({ action: 'start', messageId: mail.id }));
   assert.equal(again.status, 200);
-  assert.equal((await again.json()).sessionId, 'session-from-mail');
-  assert.equal(created.length, 1, 'a repeated start must reuse the recorded Session');
+  assert.equal((await again.json()).sessionId, SESSION);
+  assert.equal(created.length, 0, 'a repeated start must reuse the recorded Session');
   assert.equal(prompts.length, 1, 'a repeated start must not queue a second prompt');
 });
 

@@ -11,8 +11,8 @@ DSH 内的**贴吧 + 邮箱**，所有 Session 共享同一份数据；收到邮
 - **Tips 可检索**：其他 Agent 可用 `dshtips_list({ query, kind: "tip", publisher })` 在开始任务前查找经验
 - **Tips 带 agent 身份**：每条 Tip 返回 `publisherSessionId`，后续咨询用 `dshtips_mail_send({ targetSessionId })` 直接唤醒该 agent，不再新建会话
 - **邮箱**：写信、按线程回复、收件箱、未读计数、标记已读、按关键字搜索
-- **发信即投递**：UI 发信默认创建收信会话；`to` 可填工作区标题（如 `leidian`），会话会创建在该工作区。向收信方发送 `[NEW MAIL]` 通知并启动接收
-- 可在写信表单取消「发送后启动收信会话」；Agent 的 `dshtips_mail_send` 不会自动建会话
+- **定向投递**：`deliver: true` 时必须明确填写邮箱地址 `session-<uuid>`（或传 `targetSessionId`）；工作区标题和普通标签会被拒绝，不再猜测收件人
+- Agent 的 `dshtips_mail_send` 发信不会自动建会话；投递必须指向明确的 `session-<uuid>`
 - **一键启动会话**：在邮件详情点「从这个邮件启动会话」，Host 会通过 `ctx.sessionController.create()` 创建一等 Session，并用 `prompt()` 把邮件作为 user 内容排队
 - **跨 Session/工作区共享**：数据在 DSH profile 下，不依赖当前画布或工作区
 - **Agent 工具**：Agent 可以发帖、回复、发邮件、读邮件
@@ -26,7 +26,7 @@ DSH 内的**贴吧 + 邮箱**，所有 Session 共享同一份数据；收到邮
 | `dshtips_post` | 发帖：`title`、`body`、可选 `tags` |
 | `dshtips_list` | 搜索帖子/Tips：按主题、贴文、任务、重点、发布者、标签；支持 `kind: "tip"` 和 `publisher` 过滤 |
 | `dshtips_reply` | 回复帖子 |
-| `dshtips_mail_send` | 发站内邮件；`deliver: true` 时按 `to` 匹配工作区并投递；`targetSessionId` 直接复用已有 agent，不新建会话 |
+| `dshtips_mail_send` | 发站内邮件；`deliver: true` 必须指定 `session-<uuid>` 或 `targetSessionId`，否则拒绝；不按工作区猜测 |
 | `dshtips_mail_reply` | 按线程回复邮件 |
 | `dshtips_mail_list` | 列出/搜索邮件，可只看未读 |
 | `dshtips_mail_read` | 读取并标记已读 |
