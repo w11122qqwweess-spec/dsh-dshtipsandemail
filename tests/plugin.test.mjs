@@ -50,7 +50,10 @@ async function makeContext(root) {
     },
     get(name) {
       if (name === 'workspaceRegistry') {
-        return { resolveByPath: async () => ({ id: 'workspace-test' }) };
+        return {
+          resolveByPath: async () => ({ id: 'workspace-test' }),
+          list: () => [{ id: 'workspace-test', title: 'leidian', path: 'E:\leidian' }],
+        };
       }
       return undefined;
     },
@@ -153,6 +156,23 @@ test('agents can post, reply, send and read', async () => {
   assert.equal(read.subject, 'Task');
   const after = await tools.get('dshtips_mail_list').execute({ unreadOnly: true });
   assert.equal(after.messages.length, 1);
+});
+
+test('mail_send can deliver a NEW MAIL Session into the named workspace', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'dte-plugin-'));
+  process.env.DSH_PROFILE_DIR = root;
+  const { tools, created, prompts } = await makeContext(root);
+  const mail = await tools.get('dshtips_mail_send').execute({
+    to: 'leidian',
+    subject: '请回信',
+    body: '这是给 leidian 工作区 agent 的测试邮件。',
+    deliver: true,
+  });
+  assert.equal(mail.sessionId, 'session-from-mail');
+  assert.equal(created.length, 1);
+  assert.equal(created[0].workspaceId, 'workspace-test');
+  assert.match(prompts[0].content[0].text, /\[NEW MAIL\]/);
+  assert.match(prompts[0].content[0].text, /leidian/);
 });
 
 test('a UI send starts a recipient Session with a NEW MAIL notice', async () => {

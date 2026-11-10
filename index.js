@@ -4,6 +4,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { basename } from 'node:path';
 import {
   MAX_BODY,
   MAX_TITLE,
@@ -90,6 +91,17 @@ async function readBody(request) {
   return value;
 }
 
+async function workspaceIdForRecipient(ctx, to) {
+  const registry = ctx.get?.('workspaceRegistry');
+  if (registry === undefined || typeof registry.list !== 'function') return undefined;
+  const target = String(to).trim().toLowerCase();
+  if (target === '') return undefined;
+  const match = registry.list().find((workspace) =>
+    String(workspace.title).toLowerCase() === target
+    || basename(String(workspace.path)).toLowerCase() === target);
+  return match?.id;
+}
+
 async function workspaceIdForDirectory(ctx, directory) {
   const registry = ctx.get?.('workspaceRegistry');
   if (registry === undefined || typeof registry.resolveByPath !== 'function') return undefined;
@@ -111,7 +123,8 @@ async function startSessionFromMail(ctx, store, message, currentSessionId, { del
     }
   }
   if (cwd === undefined) cwd = ctx.workingDirectory.defaultDirectory;
-  const workspaceId = await workspaceIdForDirectory(ctx, cwd);
+  const recipientWorkspaceId = await workspaceIdForRecipient(ctx, message.to);
+  const workspaceId = recipientWorkspaceId ?? await workspaceIdForDirectory(ctx, cwd);
   const created = await ctx.sessionController.create({
     ...(workspaceId === undefined ? { cwd } : { workspaceId }),
   });
@@ -362,7 +375,7 @@ function registerTools(ctx, store) {
 
   add({
     name: `${TOOL_PREFIX}_mail_send`,
-    description: 'Send an in-DSH mailbox message. The message can later start a new Session from the mailbox panel.',
+    description: 'Send an in-DSH mailbox message. Set deliver=true to start a recipient Session in the workspace named by `to` (or the current workspace) and deliver a NEW MAIL prompt.',
     parameters: {
       type: 'object',
       additionalProperties: false,
@@ -370,6 +383,7 @@ function registerTools(ctx, store) {
         to: { type: 'string', description: 'recipient label, default 我' },
         subject: { type: 'string', description: 'subject, at most 200 characters' },
         body: { type: 'string', description: 'mail body, at most 20000 characters' },
+        deliver: { type: 'boolean', description: 'start a recipient Session after sending; default false' },
       },
       required: ['subject', 'body'],
     },
@@ -382,9 +396,10 @@ function registerTools(ctx, store) {
           id: { type: 'string', required: true },
           subject: { type: 'string', required: true },
           createdAt: { type: 'integer', required: true },
+          sessionId: { type: 'string' },
         },
       },
-      render: (_args, value) => [{ type: 'text', text: `Mail sent: "${value.subject}" (${value.id}).` }],
+      render: (_args, value) => [{ type: 'text', text: `Mail sent: "${value.subject}" (${value.id}).${value.sessionId ? ` Recipient Session ${value.sessionId}.` : ''}` }],
     },
     execute: async (args) => {
       const message = store.send({
@@ -392,7 +407,10 @@ function registerTools(ctx, store) {
         subject: text(args.subject, 'subject', MAX_TITLE),
         body: text(args.body, 'body', MAX_BODY),
       });
-      return { ok: true, id: message.id, subject: message.subject, createdAt: message.createdAt };
+      const sessionId = args.deliver === true
+        ? await startSessionFromMail(ctx, store, message, undefined, { delivery: true })
+        : undefined;
+      return { ok: true, id: message.id, subject: message.subject, createdAt: message.createdAt, ...(sessionId ? { sessionId } : {}) };
     },
     isConcurrencySafe: () => false,
     timeoutMs: 10000,
