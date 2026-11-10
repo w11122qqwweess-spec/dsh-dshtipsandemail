@@ -116,6 +116,10 @@ async function startSessionFromMail(ctx, store, message, currentSessionId, { del
   if (message.startedSessionId) return message.startedSessionId;
   let sessionId = typeof targetSessionId === 'string' && targetSessionId !== '' ? targetSessionId : undefined;
   if (sessionId !== undefined) {
+    const registry = ctx.get?.('workspaceRegistry');
+    if (registry !== undefined && typeof registry.unarchiveSession === 'function') {
+      await registry.unarchiveSession(sessionId);
+    }
     try {
       await ctx.sessionController.inspect(sessionId);
     } catch {

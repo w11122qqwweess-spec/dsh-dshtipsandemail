@@ -12,6 +12,7 @@ async function makeContext(root) {
   const created = [];
   const prompts = [];
   const sections = [];
+  const unarchived = [];
   const ctx = {
     systemPrompt: {
       section(section) {
@@ -53,6 +54,7 @@ async function makeContext(root) {
         return {
           resolveByPath: async () => ({ id: 'workspace-test' }),
           list: () => [{ id: 'workspace-test', title: 'leidian', path: 'E:\leidian' }],
+          unarchiveSession: async (id) => { unarchived.push(id); },
         };
       }
       return undefined;
@@ -62,7 +64,7 @@ async function makeContext(root) {
     },
   };
   apply(ctx);
-  return { tools, routes, created, prompts, sections };
+  return { tools, routes, created, prompts, sections, unarchived };
 }
 
 function request(body) {
@@ -180,7 +182,7 @@ test('mail_send can deliver a NEW MAIL Session into the named workspace', async 
 test('targetSessionId reuses an existing agent instead of creating a Session', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'dte-plugin-'));
   process.env.DSH_PROFILE_DIR = root;
-  const { tools, created, prompts } = await makeContext(root);
+  const { tools, created, prompts, unarchived } = await makeContext(root);
   const mail = await tools.get('dshtips_mail_send').execute({
     to: 'leidian',
     subject: 'Follow-up',
@@ -191,6 +193,7 @@ test('targetSessionId reuses an existing agent instead of creating a Session', a
   assert.equal(mail.sessionId, 'session-existing');
   assert.equal(created.length, 0);
   assert.equal(prompts[0].sessionId, 'session-existing');
+  assert.deepEqual(unarchived, ['session-existing']);
 });
 
 test('a UI send starts a recipient Session with a NEW MAIL notice', async () => {
