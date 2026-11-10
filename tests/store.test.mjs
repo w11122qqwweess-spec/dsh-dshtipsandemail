@@ -57,6 +57,17 @@ test('rejects empty, oversized and malformed input', async () => {
   assert.throws(() => store.markRead('missing'), /message not found/);
 });
 
+test('rejects a write that exceeds the state budget without losing the old file', async () => {
+  const file = await tempFile();
+  const store = new TipsAndEmailStore(file, { maxFileBytes: 300 });
+  assert.throws(
+    () => store.post({ title: 'too big', body: 'x'.repeat(1000) }),
+    /too large/,
+  );
+  assert.equal(store.snapshot().posts.length, 0);
+  assert.equal((await fs.stat(file).catch(() => null)), null);
+});
+
 test('normalizes a damaged entry instead of making the snapshot throw', async () => {
   const file = await tempFile();
   await fs.writeFile(file, JSON.stringify({
