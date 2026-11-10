@@ -118,6 +118,13 @@ test('the UI action starts a Session from a mail and records the id', async () =
   assert.equal(prompts.length, 1);
   assert.match(prompts[0].content[0].text, /Start me/);
   assert.match(prompts[0].content[0].text, /Run the task/);
+  assert.match(prompts[0].content[0].text, /```text/);
+
+  const again = await routes.get('/api/dshtipsandemail/action').fetch(request({ action: 'start', messageId: mail.id }));
+  assert.equal(again.status, 200);
+  assert.equal((await again.json()).sessionId, 'session-from-mail');
+  assert.equal(created.length, 1, 'a repeated start must reuse the recorded Session');
+  assert.equal(prompts.length, 1, 'a repeated start must not queue a second prompt');
 });
 
 test('state route is GET-only and action requires the custom header', async () => {

@@ -57,6 +57,21 @@ test('rejects empty, oversized and malformed input', async () => {
   assert.throws(() => store.markRead('missing'), /message not found/);
 });
 
+test('normalizes a damaged entry instead of making the snapshot throw', async () => {
+  const file = await tempFile();
+  await fs.writeFile(file, JSON.stringify({
+    version: 1,
+    posts: [{ id: 'p-1', title: 'ok', body: 'body', tags: null, createdAt: 1 }],
+    messages: [],
+    createdAt: 1,
+    updatedAt: 1,
+  }), 'utf8');
+  const store = new TipsAndEmailStore(file);
+  const snapshot = store.snapshot();
+  assert.equal(snapshot.posts.length, 1);
+  assert.deepEqual(snapshot.posts[0].replies, []);
+});
+
 test('recovers from a corrupt state file without losing the bad copy', async () => {
   const file = await tempFile();
   await fs.writeFile(file, '{not json', 'utf8');

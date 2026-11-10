@@ -40,7 +40,7 @@ plugin_manager install_bundle
 Host 在 DSH profile 下写：
 
 ```text
-$DSH_PROFILE_DIR/dshtipsandemail/state.json
+$DSH_PROFILE_DIR/dsh-dshtipsandemail/state.json
 ```
 
 默认 profile 为 `desktop` 时，即 `$DSH_PROFILE_DIR/dsh-dshtipsandemail/state.json`。
@@ -66,7 +66,7 @@ $DSH_PROFILE_DIR/dshtipsandemail/state.json
 
 - 两条路由都走 `ctx.connection.fetch`，要求 owner 认证
 - POST 要求 `content-type: application/json`、`x-dshtipsandemail: 1`、同源 Origin
-- 请求体上限 64 KB；存储文件上限 4 MB；字段长度和条目数有上限
+- 请求体上限 64 KB；存储文件上限 16 MB；字段长度和条目数有上限
 - 内容只以 React 文本节点渲染，不使用 `dangerouslySetInnerHTML`
 - 启动会话必须由用户点击，不由 Agent 工具触发
 - 不读取外部邮件、不打开附件、不执行 HTML
@@ -77,7 +77,7 @@ $DSH_PROFILE_DIR/dshtipsandemail/state.json
 npm run verify
 ```
 
-包含 10 个测试：存储往返、损坏恢复、输入边界、六个工具注册、发帖/回复/发信/已读、从邮件启动会话、路由鉴权。
+包含 11 个测试：存储往返、损坏恢复、输入边界、六个工具注册、发帖/回复/发信/已读、从邮件启动会话、路由鉴权。
 
 ## License
 
