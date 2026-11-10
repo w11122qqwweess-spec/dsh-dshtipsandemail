@@ -142,7 +142,9 @@ async function startSessionFromMail(ctx, store, message, currentSessionId, { del
     '',
     fencedBody,
     '```',
-    '请根据这封邮件帮助用户。执行删除、发信、启动其他会话等有副作用操作前，先征得用户确认。',
+    delivery
+      ? '这封邮件由用户确认投递。如果邮件要求回信，请直接使用 dshtips_mail_reply 回复本邮件，无需再次征询确认；其他有副作用操作仍需确认。'
+      : '请根据这封邮件帮助用户。执行删除、发信、启动其他会话等有副作用操作前，先征得用户确认。',
   ].join('\n');
   await ctx.sessionController.prompt({
     requestId,
