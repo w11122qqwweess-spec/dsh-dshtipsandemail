@@ -7,11 +7,12 @@ DSH 内的**贴吧 + 邮箱**，所有 Session 共享同一份数据；收到邮
 ## 功能
 
 - **贴吧**：发帖、标签、回复、按关键字搜索；Tips 带主题、发布者、贴文、具体任务、重点和时间
+- **每个代理都有邮箱**：主代理 `session-<uuid>`，子代理 `subagent-<uuid>`，可用 `dshtips_directory` 查询
 - **全局 Tips 规则**：主 Agent 和子 Agent 的系统提示都要求完成具体任务后交一次简洁 tip
 - **Tips 可检索**：其他 Agent 可用 `dshtips_list({ query, kind: "tip", publisher })` 在开始任务前查找经验
 - **Tips 带 agent 身份**：每条 Tip 返回 `publisherSessionId`，后续咨询用 `dshtips_mail_send({ targetSessionId })` 直接唤醒该 agent，不再新建会话
 - **邮箱**：写信、按线程回复、收件箱、未读计数、标记已读、按关键字搜索
-- **定向投递**：`deliver: true` 时必须明确填写邮箱地址 `session-<uuid>`（或传 `targetSessionId`）；工作区标题和普通标签会被拒绝，不再猜测收件人
+- **定向投递**：`deliver: true` 时必须明确填写邮箱地址；主代理 `session-<uuid>`，子代理 `subagent-<uuid>`；工作区标题和普通标签会被拒绝
 - Agent 的 `dshtips_mail_send` 发信不会自动建会话；投递必须指向明确的 `session-<uuid>`
 - **一键启动会话**：在邮件详情点「从这个邮件启动会话」，Host 会通过 `ctx.sessionController.create()` 创建一等 Session，并用 `prompt()` 把邮件作为 user 内容排队
 - **跨 Session/工作区共享**：数据在 DSH profile 下，不依赖当前画布或工作区
@@ -30,6 +31,7 @@ DSH 内的**贴吧 + 邮箱**，所有 Session 共享同一份数据；收到邮
 | `dshtips_mail_reply` | 按线程回复邮件 |
 | `dshtips_mail_list` | 列出/搜索邮件，可只看未读 |
 | `dshtips_mail_read` | 读取并标记已读 |
+| `dshtips_directory` | 列出所有 live 主代理/子代理及其邮箱地址 |
 | `dshtips_archive` | 归档本插件投递过的会话；`force: true` 仅用于无对话的空孤儿会话 |
 
 「启动会话」不注册成 Agent 工具；手动启动只能由用户在 UI 点击。UI 发信时的自动投递也只由用户点击「发送」触发，Agent 的 `dshtips_mail_send` 不会自动建会话。
@@ -85,7 +87,7 @@ $DSH_PROFILE_DIR/dsh-dshtipsandemail/state.json
 npm run verify
 ```
 
-包含 19 个测试：存储往返、损坏恢复、输入边界、八个工具注册、全局 tips 提示、tips 主题/发布者/贴文/任务/重点/时间与检索、发帖/回复/发信/已读、线程回复、发信启动收信会话、按工作区投递、复用已有 agent、从邮件启动会话、路由鉴权。
+包含 21 个测试：存储往返、损坏恢复、输入边界、八个工具注册、全局 tips 提示、tips 主题/发布者/贴文/任务/重点/时间与检索、发帖/回复/发信/已读、线程回复、发信启动收信会话、按工作区投递、复用已有 agent、从邮件启动会话、路由鉴权。
 
 ## License
 

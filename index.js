@@ -38,6 +38,22 @@ function compileSchema(value) {
   return out;
 }
 
+const SESSION_ADDRESS_RE = /^session-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const SUBAGENT_ADDRESS_RE = /^subagent-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
+
+function mailboxAddress(sessionId) {
+  const id = String(sessionId);
+  return id.startsWith('session-') || id.startsWith('subagent-') ? id : `subagent-${id}`;
+}
+
+function mailboxTarget(address) {
+  const value = String(address ?? '').trim();
+  if (SESSION_ADDRESS_RE.test(value)) return value;
+  const sub = SUBAGENT_ADDRESS_RE.exec(value);
+  if (sub) return sub[1];
+  return undefined;
+}
+
 const TOOL_PREFIX = 'dshtips';
 
 function json(body, status = 200) {
@@ -94,20 +110,23 @@ async function startSessionFromMail(ctx, store, message, currentSessionId, { del
   if (message.startedSessionId) return message.startedSessionId;
   let sessionId = typeof targetSessionId === 'string' && targetSessionId !== '' ? targetSessionId.trim() : undefined;
   if (sessionId === undefined) {
-    const address = String(message.to ?? '').trim();
-    if (!/^session-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(address)) {
-      throw new Error('mail delivery never creates sessions: recipient must be an existing explicit mailbox address (session-<uuid>)');
+    sessionId = mailboxTarget(message.to);
+    if (sessionId === undefined) {
+      throw new Error('mail delivery never creates sessions: recipient must be an existing mailbox address (session-<uuid> or subagent-<uuid>)');
     }
-    sessionId = address;
-  }
-  const registry = ctx.get?.('workspaceRegistry');
-  if (registry !== undefined && typeof registry.unarchiveSession === 'function') {
-    await registry.unarchiveSession(sessionId);
   }
   try {
     await ctx.sessionController.inspect(sessionId);
   } catch {
     throw new Error('mail delivery never creates sessions: recipient mailbox does not identify an existing session');
+  }
+  const registry = ctx.get?.('workspaceRegistry');
+  if (registry !== undefined && typeof registry.unarchiveSession === 'function') {
+    try {
+      await registry.unarchiveSession(sessionId);
+    } catch {
+      // Subagent sessions are not part of the workspace archive set.
+    }
   }
   const requestId = randomUUID();
   const oneLine = (value) => String(value).replace(/[\r\n]+/g, ' ').slice(0, 300);
@@ -205,6 +224,59 @@ function registerTools(ctx, store) {
       return { ok: true, id: post.id, subject: post.subject, publisher: post.publisher, publisherSessionId: post.publisherSessionId, task: post.task, body: post.body, focus: post.focus, author: post.author, createdAt: post.createdAt };
     },
     isConcurrencySafe: () => false,
+    timeoutMs: 10000,
+  });
+
+  add({
+    name: `${TOOL_PREFIX}_directory`,
+    description: 'List live main agents and subagents with their mailbox addresses. Main agents use session-<uuid>; subagents use subagent-<uuid>.',
+    parameters: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {},
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          ok: { type: 'boolean', required: true },
+          entries: {
+            type: 'array',
+            required: true,
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                sessionId: { type: 'string', required: true },
+                address: { type: 'string', required: true },
+                kind: { type: 'string', required: true },
+                workspace: { type: 'string', required: true },
+              },
+            },
+          },
+        },
+      },
+      render: (_args, value) => [{ type: 'text', text: value.entries.map((entry) => `${entry.kind}  ${entry.address}  workspace=${entry.workspace}`).join(String.fromCharCode(10)) }],
+    },
+    execute: async () => {
+      const agents = ctx.get?.('agents');
+      if (agents === undefined || typeof agents.list !== 'function') throw new Error('agent registry is unavailable');
+      const registry = ctx.get?.('workspaceRegistry');
+      const workspaces = registry !== undefined && typeof registry.list === 'function' ? registry.list() : [];
+      const entries = agents.list().map((agent) => {
+        const id = String(agent.id);
+        const workspace = workspaces.find((candidate) => Array.isArray(candidate.sessionIds) && candidate.sessionIds.includes(id));
+        return {
+          sessionId: id,
+          address: mailboxAddress(id),
+          kind: id.startsWith('session-') ? 'main' : 'subagent',
+          workspace: workspace?.title ?? (id.startsWith('session-') ? 'unknown' : 'subagent'),
+        };
+      });
+      return { ok: true, entries };
+    },
+    isConcurrencySafe: () => true,
     timeoutMs: 10000,
   });
 

@@ -53,6 +53,9 @@ async function makeContext(root) {
       defaultDirectory: root,
     },
     get(name) {
+      if (name === 'agents') {
+        return { list: () => [{ id: 'session-11111111-1111-1111-1111-111111111111' }, { id: '22222222-2222-2222-2222-222222222222' }] };
+      }
       if (name === 'workspaceRegistry') {
         return {
           resolveByPath: async () => ({ id: 'workspace-test' }),
@@ -83,12 +86,13 @@ function request(body) {
   });
 }
 
-test('registers nine tools and two authenticated routes', async () => {
+test('registers ten tools and two authenticated routes', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'dte-plugin-'));
   process.env.DSH_PROFILE_DIR = root;
   const { tools, routes } = await makeContext(root);
   assert.deepEqual([...tools.keys()].sort(), [
     'dshtips_archive',
+    'dshtips_directory',
     'dshtips_list',
     'dshtips_mail_list',
     'dshtips_mail_read',
@@ -178,13 +182,40 @@ test('archive only accepts a Session started by this mailbox', async () => {
   assert.deepEqual(archived, [mail.sessionId]);
 });
 
+test('every live agent and subagent has a mailbox address', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'dte-plugin-'));
+  process.env.DSH_PROFILE_DIR = root;
+  const { tools } = await makeContext(root);
+  const directory = await tools.get('dshtips_directory').execute({});
+  assert.deepEqual(directory.entries.map((entry) => entry.address), [
+    'session-11111111-1111-1111-1111-111111111111',
+    'subagent-22222222-2222-2222-2222-222222222222',
+  ]);
+  assert.deepEqual(directory.entries.map((entry) => entry.kind), ['main', 'subagent']);
+});
+
+test('mail can address a subagent mailbox without creating a Session', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'dte-plugin-'));
+  process.env.DSH_PROFILE_DIR = root;
+  const { tools, created, prompts } = await makeContext(root);
+  const mail = await tools.get('dshtips_mail_send').execute({
+    to: 'subagent-22222222-2222-2222-2222-222222222222',
+    subject: 'Subagent mail',
+    body: 'Hello subagent',
+    deliver: true,
+  });
+  assert.equal(mail.sessionId, '22222222-2222-2222-2222-222222222222');
+  assert.equal(created.length, 0);
+  assert.equal(prompts[0].sessionId, '22222222-2222-2222-2222-222222222222');
+});
+
 test('mail_send rejects a workspace label but accepts an explicit session mailbox', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'dte-plugin-'));
   process.env.DSH_PROFILE_DIR = root;
   const { tools, created, prompts } = await makeContext(root);
   await assert.rejects(
     () => tools.get('dshtips_mail_send').execute({ to: 'leidian', subject: 'No', body: 'No', deliver: true }),
-    /explicit mailbox/,
+    /mailbox address/,
   );
   const mail = await tools.get('dshtips_mail_send').execute({
     to: SESSION,
