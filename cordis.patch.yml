@@ -1,0 +1,4 @@
+- insert:
+    - id: dshtipsandemail
+      name: dsh-dshtipsandemail
+      config: {}
