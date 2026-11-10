@@ -156,6 +156,7 @@ function registerTools(ctx, store) {
       additionalProperties: false,
       properties: {
         subject: { type: 'string', description: 'short theme/title of the tip, at most 160 characters' },
+        publisher: { type: 'string', description: 'publisher name or session handle, at most 80 characters' },
         task: { type: 'string', description: 'specific task just completed, at most 160 characters' },
         body: { type: 'string', description: 'the actual tip post text, concise, at most 1000 characters' },
         focus: { type: 'string', description: 'single most important lesson or result, at most 280 characters' },
@@ -165,7 +166,7 @@ function registerTools(ctx, store) {
           description: 'optional tags, at most 8',
         },
       },
-      required: ['subject', 'task', 'body', 'focus'],
+      required: ['subject', 'publisher', 'task', 'body', 'focus'],
     },
     output: {
       schema: {
@@ -175,6 +176,7 @@ function registerTools(ctx, store) {
           ok: { type: 'boolean', required: true },
           id: { type: 'string', required: true },
           subject: { type: 'string', required: true },
+          publisher: { type: 'string', required: true },
           task: { type: 'string', required: true },
           body: { type: 'string', required: true },
           focus: { type: 'string', required: true },
@@ -182,10 +184,11 @@ function registerTools(ctx, store) {
           createdAt: { type: 'integer', required: true },
         },
       },
-      render: (_args, value) => [{ type: 'text', text: `Tip recorded at ${new Date(value.createdAt).toISOString()}: ${value.subject} — ${value.task} — ${value.focus}` }],
+      render: (_args, value) => [{ type: 'text', text: `Tip recorded at ${new Date(value.createdAt).toISOString()}: ${value.subject} — ${value.publisher} — ${value.task} — ${value.focus}` }],
     },
     execute: async (args, exec) => {
       const subject = text(args.subject, 'subject', 160);
+      const publisher = text(args.publisher, 'publisher', 80);
       const task = text(args.task, 'task', 160);
       const body = text(args.body, 'body', 1000);
       const focus = text(args.focus, 'focus', 280);
@@ -196,10 +199,11 @@ function registerTools(ctx, store) {
         author: exec?.agent?.id ?? 'DSH',
         kind: 'tip',
         subject,
+        publisher,
         task,
         focus,
       });
-      return { ok: true, id: post.id, subject: post.subject, task: post.task, body: post.body, focus: post.focus, author: post.author, createdAt: post.createdAt };
+      return { ok: true, id: post.id, subject: post.subject, publisher: post.publisher, task: post.task, body: post.body, focus: post.focus, author: post.author, createdAt: post.createdAt };
     },
     isConcurrencySafe: () => false,
     timeoutMs: 10000,
@@ -281,6 +285,7 @@ function registerTools(ctx, store) {
                 replies: { type: 'integer', required: true },
                 kind: { type: 'string' },
                 subject: { type: 'string' },
+                publisher: { type: 'string' },
                 task: { type: 'string' },
                 focus: { type: 'string' },
               },
@@ -306,6 +311,7 @@ function registerTools(ctx, store) {
           replies: post.replies.length,
           kind: post.kind === 'tip' ? 'tip' : 'post',
           ...(post.subject ? { subject: post.subject } : {}),
+          ...(post.publisher ? { publisher: post.publisher } : {}),
           ...(post.task ? { task: post.task } : {}),
           ...(post.focus ? { focus: post.focus } : {}),
         }));
@@ -608,7 +614,7 @@ export function apply(ctx) {
     text: [
       '## Task tips',
       'After completing one concrete task (including a simple one), call `dshtips_tip` exactly once before your final answer.',
-      'Required: `subject` is the theme/title; `task` names the specific work; `body` is the short tip post text; `focus` is the single reusable lesson. The tool records the time.',
+      'Required: `subject` is the theme/title; `publisher` is the publisher name or session handle; `task` names the specific work; `body` is the short tip post text; `focus` is the single reusable lesson. The tool records the time.',
       'Do not paste the full output, do not include secrets, and do not submit duplicate tips for the same task. Skip tips for pure conversation, greetings, or unfinished work.',
     ].join('\n'),
   }));

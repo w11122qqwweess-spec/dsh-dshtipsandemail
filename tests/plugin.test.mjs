@@ -102,20 +102,22 @@ test('every Agent gets the task-tip policy in its system prompt', async () => {
   assert.match(sections[0].text, /dshtips_tip/);
   assert.match(sections[0].text, /exactly once/);
   assert.match(sections[0].text, /subject/);
+  assert.match(sections[0].text, /publisher/);
   assert.match(sections[0].text, /body/);
   assert.match(sections[0].text, /focus/);
 });
 
-test('an Agent can submit one timed tip with subject, task, post and focus', async () => {
+test('an Agent can submit one timed tip with subject, publisher, task, post and focus', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'dte-plugin-'));
   process.env.DSH_PROFILE_DIR = root;
   const { tools } = await makeContext(root);
   const tip = await tools.get('dshtips_tip').execute(
-    { subject: 'Threaded mail replies', task: 'Threaded mail replies', body: 'A tip post that explains the thread model.', focus: 'Store replyTo and threadId so the UI can group replies.', tags: ['mail'] },
+    { subject: 'Threaded mail replies', publisher: 'session-abc', task: 'Threaded mail replies', body: 'A tip post that explains the thread model.', focus: 'Store replyTo and threadId so the UI can group replies.', tags: ['mail'] },
     { agent: { id: 'session-abc' } },
   );
   assert.equal(tip.ok, true);
   assert.equal(tip.subject, 'Threaded mail replies');
+  assert.equal(tip.publisher, 'session-abc');
   assert.equal(tip.task, 'Threaded mail replies');
   assert.equal(tip.body, 'A tip post that explains the thread model.');
   assert.equal(tip.focus, 'Store replyTo and threadId so the UI can group replies.');
@@ -124,6 +126,7 @@ test('an Agent can submit one timed tip with subject, task, post and focus', asy
   const list = await tools.get('dshtips_list').execute({ query: 'Threaded' });
   assert.equal(list.posts[0].kind, 'tip');
   assert.equal(list.posts[0].subject, 'Threaded mail replies');
+  assert.equal(list.posts[0].publisher, 'session-abc');
   assert.equal(list.posts[0].body, 'A tip post that explains the thread model.');
   assert.equal(list.posts[0].task, 'Threaded mail replies');
   assert.equal(list.posts[0].focus, 'Store replyTo and threadId so the UI can group replies.');
