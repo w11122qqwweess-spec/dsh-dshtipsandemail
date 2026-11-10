@@ -509,6 +509,47 @@ function registerTools(ctx, store) {
   });
 
   add({
+    name: `${TOOL_PREFIX}_archive`,
+    description: 'Archive one Session that this mailbox started, without deleting its log or mailbox history. Use it to clean up failed or duplicate mail-delivery sessions.',
+    parameters: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        sessionId: { type: 'string', description: 'mail-started or empty orphan Session id to archive' },
+        force: { type: 'boolean', description: 'archive an empty orphan Session that was not recorded as mail-started' },
+      },
+      required: ['sessionId'],
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          ok: { type: 'boolean', required: true },
+          sessionId: { type: 'string', required: true },
+        },
+      },
+      render: (_args, value) => [{ type: 'text', text: `Archived ${value.sessionId}.` }],
+    },
+    execute: async (args) => {
+      const sessionId = text(args.sessionId, 'sessionId', 120);
+      const startedByMail = store.snapshot().messages.some((message) => message.startedSessionId === sessionId);
+      if (!startedByMail) {
+        if (args.force !== true) throw new Error('session was not started by this mailbox');
+        const inspection = await ctx.sessionController.inspect(sessionId);
+        const hasConversation = inspection.events.some((event) => event.type === 'user/message' || event.type === 'assistant/message' || event.type === 'turn/start');
+        if (hasConversation) throw new Error('refusing to archive a session with conversation history');
+      }
+      const registry = ctx.get?.('workspaceRegistry');
+      if (registry === undefined || typeof registry.archiveSession !== 'function') throw new Error('workspace registry is unavailable');
+      await registry.archiveSession(sessionId, { stopActivity: true });
+      return { ok: true, sessionId };
+    },
+    isConcurrencySafe: () => false,
+    timeoutMs: 30000,
+  });
+
+  add({
     name: `${TOOL_PREFIX}_mail_reply`,
     description: 'Reply to an existing mailbox message as a threaded reply. The reply preserves the thread and addresses the original sender.',
     parameters: {

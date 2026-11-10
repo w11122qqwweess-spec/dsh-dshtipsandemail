@@ -13,6 +13,7 @@ async function makeContext(root) {
   const prompts = [];
   const sections = [];
   const unarchived = [];
+  const archived = [];
   const ctx = {
     systemPrompt: {
       section(section) {
@@ -55,6 +56,7 @@ async function makeContext(root) {
           resolveByPath: async () => ({ id: 'workspace-test' }),
           list: () => [{ id: 'workspace-test', title: 'leidian', path: 'E:\leidian' }],
           unarchiveSession: async (id) => { unarchived.push(id); },
+          archiveSession: async (id) => { archived.push(id); },
         };
       }
       return undefined;
@@ -64,7 +66,7 @@ async function makeContext(root) {
     },
   };
   apply(ctx);
-  return { tools, routes, created, prompts, sections, unarchived };
+  return { tools, routes, created, prompts, sections, unarchived, archived };
 }
 
 function request(body) {
@@ -79,11 +81,12 @@ function request(body) {
   });
 }
 
-test('registers eight tools and two authenticated routes', async () => {
+test('registers nine tools and two authenticated routes', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'dte-plugin-'));
   process.env.DSH_PROFILE_DIR = root;
   const { tools, routes } = await makeContext(root);
   assert.deepEqual([...tools.keys()].sort(), [
+    'dshtips_archive',
     'dshtips_list',
     'dshtips_mail_list',
     'dshtips_mail_read',
@@ -160,6 +163,17 @@ test('agents can post, reply, send and read', async () => {
   assert.equal(read.subject, 'Task');
   const after = await tools.get('dshtips_mail_list').execute({ unreadOnly: true });
   assert.equal(after.messages.length, 1);
+});
+
+test('archive only accepts a Session started by this mailbox', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'dte-plugin-'));
+  process.env.DSH_PROFILE_DIR = root;
+  const { tools, archived } = await makeContext(root);
+  await assert.rejects(() => tools.get('dshtips_archive').execute({ sessionId: 'session-unknown' }), /was not started/);
+  const mail = await tools.get('dshtips_mail_send').execute({ to: 'leidian', subject: 'Archive me', body: 'x', deliver: true });
+  const result = await tools.get('dshtips_archive').execute({ sessionId: mail.sessionId });
+  assert.equal(result.ok, true);
+  assert.deepEqual(archived, [mail.sessionId]);
 });
 
 test('mail_send can deliver a NEW MAIL Session into the named workspace', async () => {

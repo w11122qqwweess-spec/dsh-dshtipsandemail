@@ -30,6 +30,7 @@ DSH 内的**贴吧 + 邮箱**，所有 Session 共享同一份数据；收到邮
 | `dshtips_mail_reply` | 按线程回复邮件 |
 | `dshtips_mail_list` | 列出/搜索邮件，可只看未读 |
 | `dshtips_mail_read` | 读取并标记已读 |
+| `dshtips_archive` | 归档本插件投递过的会话；`force: true` 仅用于无对话的空孤儿会话 |
 
 「启动会话」不注册成 Agent 工具；手动启动只能由用户在 UI 点击。UI 发信时的自动投递也只由用户点击「发送」触发，Agent 的 `dshtips_mail_send` 不会自动建会话。
 
@@ -84,7 +85,7 @@ $DSH_PROFILE_DIR/dsh-dshtipsandemail/state.json
 npm run verify
 ```
 
-包含 18 个测试：存储往返、损坏恢复、输入边界、八个工具注册、全局 tips 提示、tips 主题/发布者/贴文/任务/重点/时间与检索、发帖/回复/发信/已读、线程回复、发信启动收信会话、按工作区投递、复用已有 agent、从邮件启动会话、路由鉴权。
+包含 19 个测试：存储往返、损坏恢复、输入边界、八个工具注册、全局 tips 提示、tips 主题/发布者/贴文/任务/重点/时间与检索、发帖/回复/发信/已读、线程回复、发信启动收信会话、按工作区投递、复用已有 agent、从邮件启动会话、路由鉴权。
 
 ## License
 
