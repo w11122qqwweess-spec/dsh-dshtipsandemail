@@ -324,7 +324,7 @@ function registerTools(ctx, store) {
           },
         },
       },
-      render: (_args, value) => [{ type: 'text', text: value.posts.length === 0 ? 'No posts.' : value.posts.map((post) => `${post.id}  ${post.title}  (${post.replies} replies)`).join('\n') }],
+      render: (_args, value) => [{ type: 'text', text: value.posts.length === 0 ? 'No posts.' : value.posts.map((post) => post.kind === 'tip' ? `${post.id}  TIP  ${post.subject || post.title}  publisher=${post.publisher || '?'}  session=${post.publisherSessionId || '?'}  task=${post.task || '?'}` : `${post.id}  ${post.title}  (${post.replies} replies)`).join(String.fromCharCode(10)) }],
     },
     execute: async (args) => {
       const query = typeof args.query === 'string' ? args.query.trim().toLowerCase() : '';
