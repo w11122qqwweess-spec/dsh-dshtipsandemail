@@ -42,6 +42,10 @@ window.__ModuleLoader__.load({
         'mail.detailEmpty': '选择左侧邮件查看内容',
         'mail.unread': '{n} 封未读',
         'mail.read': '标记已读',
+        'mail.reply': '回复',
+        'mail.replyPlaceholder': '写回复…',
+        'mail.thread': '同一线程',
+        'mail.replies': '{n} 条回复',
         'error.load': '读取失败：{message}',
         'error.action': '操作失败：{message}',
         'error.start': '启动会话失败：{message}',
@@ -83,6 +87,10 @@ window.__ModuleLoader__.load({
         'mail.detailEmpty': 'Select a message to read it',
         'mail.unread': '{n} unread',
         'mail.read': 'Mark read',
+        'mail.reply': 'Reply',
+        'mail.replyPlaceholder': 'Write a reply…',
+        'mail.thread': 'Thread',
+        'mail.replies': '{n} replies',
         'error.load': 'Load failed: {message}',
         'error.action': 'Action failed: {message}',
         'error.start': 'Starting the Session failed: {message}',
@@ -120,6 +128,11 @@ window.__ModuleLoader__.load({
       .dte-body { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; line-height: 1.65; color: var(--dsw-alias-label-primary); }
       .dte-tags { display: flex; flex-wrap: wrap; gap: 5px; margin: 8px 0 0; }
       .dte-tag { font-size: 10px; color: var(--dsw-alias-label-secondary); border: 1px solid var(--dsw-alias-border-l1); border-radius: 999px; padding: 2px 7px; }
+      .dte-thread { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+      .dte-thread-item { border: 1px solid var(--dsw-alias-border-l1); background: var(--dsw-alias-bg-layer-1); border-radius: 9px; padding: 10px; }
+      .dte-thread-item.current { border-color: var(--dsw-alias-border-l2); }
+      .dte-thread-meta { font-size: 10px; color: var(--dsw-alias-label-secondary); margin-bottom: 5px; }
+      .dte-reply-box { display: flex; flex-direction: column; gap: 7px; margin-top: 12px; }
       .dte-replies { margin-top: 20px; border-top: 1px solid var(--dsw-alias-border-l1); padding-top: 14px; display: flex; flex-direction: column; gap: 10px; }
       .dte-reply { border-left: 2px solid var(--dsw-alias-border-l2); padding-left: 10px; }
       .dte-reply-body { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; line-height: 1.55; margin-top: 3px; }
@@ -291,8 +304,16 @@ window.__ModuleLoader__.load({
 
     function Mail({ t, data, selectedId, setSelectedId, busy, onAction, onStart, onError }) {
       const [compose, setCompose] = useState(false);
+      const [reply, setReply] = useState('');
       const messages = data.messages || [];
       const selected = messages.find((message) => message.id === selectedId) || messages[0];
+      const threadRoot = selected ? (selected.threadId || selected.id) : null;
+      const thread = selected
+        ? messages
+          .filter((message) => message.id === threadRoot || message.threadId === threadRoot || message.replyTo === threadRoot)
+          .slice()
+          .sort((a, b) => a.createdAt - b.createdAt)
+        : [];
       useEffect(() => {
         if (!selectedId && messages[0]) setSelectedId(messages[0].id);
       }, [messages, selectedId, setSelectedId]);
@@ -340,7 +361,31 @@ window.__ModuleLoader__.load({
                 h('button', { type: 'button', className: 'dte-btn primary', disabled: busy || Boolean(selected.startedSessionId), onClick: () => onStart(selected.id).catch(onError) }, selected.startedSessionId ? t('mail.started', { id: selected.startedSessionId }) : t('mail.start')),
               ),
             ),
-            h('div', { className: 'dte-body' }, selected.body),
+            h('div', { className: 'dte-thread' },
+              thread.map((message) => h('div', { className: `dte-thread-item${selected.id === message.id ? ' current' : ''}`, key: message.id },
+                h('div', { className: 'dte-thread-meta' }, `${message.from} → ${message.to} · ${formatTime(message.createdAt)}`),
+                h('div', { className: 'dte-body' }, message.body),
+              )),
+              thread.length > 1 ? h('div', { className: 'dte-item-meta' }, t('mail.replies', { n: thread.length - 1 })) : null,
+            ),
+            h('form', {
+              className: 'dte-reply-box',
+              onSubmit: async (event) => {
+                event.preventDefault();
+                if (reply.trim() === '') return;
+                try {
+                  await onAction({ action: 'replyMail', messageId: selected.id, body: reply });
+                  setReply('');
+                } catch (error) {
+                  onError(error);
+                }
+              },
+            },
+              h('textarea', { className: 'dte-textarea', value: reply, onChange: (e) => setReply(e.target.value), placeholder: t('mail.replyPlaceholder'), disabled: busy, maxLength: 20000 }),
+              h('div', { className: 'dte-actions' },
+                h('button', { type: 'submit', className: 'dte-btn primary', disabled: busy || reply.trim() === '' }, t('mail.reply')),
+              ),
+            ),
           ) : h('div', { className: 'dte-empty' }, h('strong', null, t('mail.empty')), h('span', null, t('mail.emptyHint'))),
         ),
       );
@@ -387,7 +432,7 @@ window.__ModuleLoader__.load({
           if (alive) void load();
         };
         tick();
-        const timer = setInterval(tick, 2500);
+        const timer = setInterval(tick, 1500);
         return () => {
           alive = false;
           clearInterval(timer);

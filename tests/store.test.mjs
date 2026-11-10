@@ -18,20 +18,24 @@ test('posts, replies, mails and persists across reload', async () => {
   assert.equal(post.title, 'Finding');
   store.reply({ postId: post.id, body: 'Reply body' });
   const mail = store.send({ subject: 'Hello', body: 'Mail body', to: 'me' });
+  const reply = store.replyMail({ messageId: mail.id, body: 'Threaded answer', from: 'me' });
+  assert.equal(reply.replyTo, mail.id);
+  assert.equal(reply.threadId, mail.id);
+  assert.equal(reply.subject, 'Re: Hello');
   assert.equal(mail.read, false);
 
   const snapshot = store.snapshot();
   assert.equal(snapshot.stats.posts, 1);
   assert.equal(snapshot.stats.replies, 1);
-  assert.equal(snapshot.stats.messages, 1);
-  assert.equal(snapshot.stats.unread, 1);
+  assert.equal(snapshot.stats.messages, 2);
+  assert.equal(snapshot.stats.unread, 2);
 
   const reloaded = new TipsAndEmailStore(file);
   const again = reloaded.snapshot();
   assert.equal(again.posts[0].title, 'Finding');
   assert.equal(again.posts[0].replies[0].body, 'Reply body');
-  assert.equal(again.messages[0].subject, 'Hello');
-  assert.equal(again.stats.unread, 1);
+  assert.equal(again.messages[0].subject, 'Re: Hello');
+  assert.equal(again.stats.unread, 2);
 });
 
 test('marks mail read and started idempotently at the storage layer', async () => {

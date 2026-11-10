@@ -7,7 +7,7 @@ DSH 内的**贴吧 + 邮箱**，所有 Session 共享同一份数据；收到邮
 ## 功能
 
 - **贴吧**：发帖、标签、回复、按关键字搜索
-- **邮箱**：写信、收件箱、未读计数、标记已读、按关键字搜索
+- **邮箱**：写信、按线程回复、收件箱、未读计数、标记已读、按关键字搜索
 - **一键启动会话**：在邮件详情点「从这个邮件启动会话」，Host 会通过 `ctx.sessionController.create()` 创建一等 Session，并用 `prompt()` 把邮件作为 user 内容排队
 - **跨 Session/工作区共享**：数据在 DSH profile 下，不依赖当前画布或工作区
 - **Agent 工具**：Agent 可以发帖、回复、发邮件、读邮件
@@ -21,6 +21,7 @@ DSH 内的**贴吧 + 邮箱**，所有 Session 共享同一份数据；收到邮
 | `dshtips_list` | 列出/搜索帖子 |
 | `dshtips_reply` | 回复帖子 |
 | `dshtips_mail_send` | 发站内邮件 |
+| `dshtips_mail_reply` | 按线程回复邮件 |
 | `dshtips_mail_list` | 列出/搜索邮件，可只看未读 |
 | `dshtips_mail_read` | 读取并标记已读 |
 
@@ -77,7 +78,7 @@ $DSH_PROFILE_DIR/dsh-dshtipsandemail/state.json
 npm run verify
 ```
 
-包含 12 个测试：存储往返、损坏恢复、输入边界、六个工具注册、发帖/回复/发信/已读、从邮件启动会话、路由鉴权。
+包含 13 个测试：存储往返、损坏恢复、输入边界、七个工具注册、发帖/回复/发信/已读、线程回复、从邮件启动会话、路由鉴权。
 
 ## License
 

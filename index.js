@@ -354,6 +354,8 @@ function registerTools(ctx, store) {
                 read: { type: 'boolean', required: true },
                 createdAt: { type: 'integer', required: true },
                 startedSessionId: { type: 'string' },
+                replyTo: { type: 'string' },
+                threadId: { type: 'string' },
               },
             },
           },
@@ -378,10 +380,47 @@ function registerTools(ctx, store) {
           read: message.read,
           createdAt: message.createdAt,
           ...(message.startedSessionId ? { startedSessionId: message.startedSessionId } : {}),
+          ...(message.replyTo ? { replyTo: message.replyTo } : {}),
+          ...(message.threadId ? { threadId: message.threadId } : {}),
         }));
       return { ok: true, unread: snapshot.stats.unread, messages };
     },
     isConcurrencySafe: () => true,
+    timeoutMs: 10000,
+  });
+
+  add({
+    name: `${TOOL_PREFIX}_mail_reply`,
+    description: 'Reply to an existing mailbox message as a threaded reply. The reply preserves the thread and addresses the original sender.',
+    parameters: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        messageId: { type: 'string', description: 'message id to reply to' },
+        body: { type: 'string', description: 'reply body, at most 20000 characters' },
+      },
+      required: ['messageId', 'body'],
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          ok: { type: 'boolean', required: true },
+          id: { type: 'string', required: true },
+          threadId: { type: 'string', required: true },
+          replyTo: { type: 'string', required: true },
+          subject: { type: 'string', required: true },
+          createdAt: { type: 'integer', required: true },
+        },
+      },
+      render: (_args, value) => [{ type: 'text', text: `Replied to ${value.replyTo} in thread ${value.threadId}.` }],
+    },
+    execute: async (args) => {
+      const reply = store.replyMail({ messageId: text(args.messageId, 'messageId', 120), body: text(args.body, 'body', MAX_BODY), from: 'DSH' });
+      return { ok: true, id: reply.id, threadId: reply.threadId, replyTo: reply.replyTo, subject: reply.subject, createdAt: reply.createdAt };
+    },
+    isConcurrencySafe: () => false,
     timeoutMs: 10000,
   });
 
@@ -465,6 +504,8 @@ function registerRoutes(ctx, store) {
             store.reply({ postId: text(body.postId, 'postId', 120), body: text(body.body, 'body', MAX_BODY) });
           } else if (body.action === 'send') {
             store.send({ to: body.to, subject: text(body.subject, 'subject', MAX_TITLE), body: text(body.body, 'body', MAX_BODY) });
+          } else if (body.action === 'replyMail') {
+            store.replyMail({ messageId: text(body.messageId, 'messageId', 120), body: text(body.body, 'body', MAX_BODY), from: '我' });
           } else if (body.action === 'read') {
             store.markRead(text(body.messageId, 'messageId', 120), true);
           } else if (body.action === 'start') {

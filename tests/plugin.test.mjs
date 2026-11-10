@@ -67,7 +67,7 @@ function request(body) {
   });
 }
 
-test('registers six tools and two authenticated routes', async () => {
+test('registers seven tools and two authenticated routes', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'dte-plugin-'));
   process.env.DSH_PROFILE_DIR = root;
   const { tools, routes } = await makeContext(root);
@@ -75,6 +75,7 @@ test('registers six tools and two authenticated routes', async () => {
     'dshtips_list',
     'dshtips_mail_list',
     'dshtips_mail_read',
+    'dshtips_mail_reply',
     'dshtips_mail_send',
     'dshtips_post',
     'dshtips_reply',
@@ -95,12 +96,29 @@ test('agents can post, reply, send and read', async () => {
   assert.equal(list.posts.length, 1);
   await tools.get('dshtips_reply').execute({ postId: post.id, body: 'A reply' });
   const mail = await tools.get('dshtips_mail_send').execute({ subject: 'Task', body: 'Please handle this' });
+  const reply = await tools.get('dshtips_mail_reply').execute({ messageId: mail.id, body: 'A threaded reply' });
+  assert.equal(reply.replyTo, mail.id);
+  assert.equal(reply.threadId, mail.id);
   const inbox = await tools.get('dshtips_mail_list').execute({});
-  assert.equal(inbox.messages.length, 1);
+  assert.equal(inbox.messages.length, 2);
   const read = await tools.get('dshtips_mail_read').execute({ messageId: mail.id });
   assert.equal(read.subject, 'Task');
   const after = await tools.get('dshtips_mail_list').execute({ unreadOnly: true });
-  assert.equal(after.messages.length, 0);
+  assert.equal(after.messages.length, 1);
+});
+
+test('the UI action creates a threaded mail reply', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'dte-plugin-'));
+  process.env.DSH_PROFILE_DIR = root;
+  const { tools, routes } = await makeContext(root);
+  const mail = await tools.get('dshtips_mail_send').execute({ subject: 'Thread me', body: 'Original' });
+  const response = await routes.get('/api/dshtipsandemail/action').fetch(request({ action: 'replyMail', messageId: mail.id, body: 'Reply body' }));
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.value.messages.length, 2);
+  const reply = body.value.messages.find((message) => message.replyTo === mail.id);
+  assert.equal(reply.threadId, mail.id);
+  assert.equal(reply.subject, 'Re: Thread me');
 });
 
 test('the UI action starts a Session from a mail and records the id', async () => {
