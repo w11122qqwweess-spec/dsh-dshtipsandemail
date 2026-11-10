@@ -112,7 +112,7 @@ async function workspaceIdForDirectory(ctx, directory) {
   }
 }
 
-async function startSessionFromMail(ctx, store, message, currentSessionId, { delivery = false } = {}) {
+async function startSessionFromMail(ctx, store, message, currentSessionId, { delivery = false, signal } = {}) {
   if (message.startedSessionId) return message.startedSessionId;
   let cwd;
   if (typeof currentSessionId === 'string' && currentSessionId !== '') {
@@ -149,7 +149,7 @@ async function startSessionFromMail(ctx, store, message, currentSessionId, { del
     sessionId: created.sessionId,
     mode: 'queue',
     content: [{ type: 'text', text: prompt }],
-  });
+  }, signal ?? new AbortController().signal);
   store.markStarted(message.id, created.sessionId);
   return created.sessionId;
 }
@@ -402,14 +402,14 @@ function registerTools(ctx, store) {
       },
       render: (_args, value) => [{ type: 'text', text: `Mail sent: "${value.subject}" (${value.id}).${value.sessionId ? ` Recipient Session ${value.sessionId}.` : ''}` }],
     },
-    execute: async (args) => {
+    execute: async (args, exec) => {
       const message = store.send({
         to: args.to,
         subject: text(args.subject, 'subject', MAX_TITLE),
         body: text(args.body, 'body', MAX_BODY),
       });
       const sessionId = args.deliver === true
-        ? await startSessionFromMail(ctx, store, message, undefined, { delivery: true })
+        ? await startSessionFromMail(ctx, store, message, undefined, { delivery: true, signal: exec?.signal })
         : undefined;
       return { ok: true, id: message.id, subject: message.subject, createdAt: message.createdAt, ...(sessionId ? { sessionId } : {}) };
     },
