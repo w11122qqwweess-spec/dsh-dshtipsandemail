@@ -112,22 +112,32 @@ async function workspaceIdForDirectory(ctx, directory) {
   }
 }
 
-async function startSessionFromMail(ctx, store, message, currentSessionId, { delivery = false, signal } = {}) {
+async function startSessionFromMail(ctx, store, message, currentSessionId, { delivery = false, signal, targetSessionId } = {}) {
   if (message.startedSessionId) return message.startedSessionId;
-  let cwd;
-  if (typeof currentSessionId === 'string' && currentSessionId !== '') {
+  let sessionId = typeof targetSessionId === 'string' && targetSessionId !== '' ? targetSessionId : undefined;
+  if (sessionId !== undefined) {
     try {
-      cwd = (await ctx.sessionController.inspect(currentSessionId)).meta.cwd;
+      await ctx.sessionController.inspect(sessionId);
     } catch {
-      cwd = undefined;
+      throw new Error('targetSessionId does not identify an existing session');
     }
+  } else {
+    let cwd;
+    if (typeof currentSessionId === 'string' && currentSessionId !== '') {
+      try {
+        cwd = (await ctx.sessionController.inspect(currentSessionId)).meta.cwd;
+      } catch {
+        cwd = undefined;
+      }
+    }
+    if (cwd === undefined) cwd = ctx.workingDirectory.defaultDirectory;
+    const recipientWorkspaceId = await workspaceIdForRecipient(ctx, message.to);
+    const workspaceId = recipientWorkspaceId ?? await workspaceIdForDirectory(ctx, cwd);
+    const created = await ctx.sessionController.create({
+      ...(workspaceId === undefined ? { cwd } : { workspaceId }),
+    });
+    sessionId = created.sessionId;
   }
-  if (cwd === undefined) cwd = ctx.workingDirectory.defaultDirectory;
-  const recipientWorkspaceId = await workspaceIdForRecipient(ctx, message.to);
-  const workspaceId = recipientWorkspaceId ?? await workspaceIdForDirectory(ctx, cwd);
-  const created = await ctx.sessionController.create({
-    ...(workspaceId === undefined ? { cwd } : { workspaceId }),
-  });
   const requestId = randomUUID();
   const oneLine = (value) => String(value).replace(/[\r\n]+/g, ' ').slice(0, 300);
   const fencedBody = String(message.body).replaceAll('```', '`\u200b``');
@@ -148,12 +158,12 @@ async function startSessionFromMail(ctx, store, message, currentSessionId, { del
   ].join('\n');
   await ctx.sessionController.prompt({
     requestId,
-    sessionId: created.sessionId,
+    sessionId,
     mode: 'queue',
     content: [{ type: 'text', text: prompt }],
   }, signal ?? new AbortController().signal);
-  store.markStarted(message.id, created.sessionId);
-  return created.sessionId;
+  store.markStarted(message.id, sessionId);
+  return sessionId;
 }
 
 function registerTools(ctx, store) {
@@ -193,6 +203,7 @@ function registerTools(ctx, store) {
           id: { type: 'string', required: true },
           subject: { type: 'string', required: true },
           publisher: { type: 'string', required: true },
+          publisherSessionId: { type: 'string' },
           task: { type: 'string', required: true },
           body: { type: 'string', required: true },
           focus: { type: 'string', required: true },
@@ -216,10 +227,11 @@ function registerTools(ctx, store) {
         kind: 'tip',
         subject,
         publisher,
+        publisherSessionId: exec?.agent?.id ?? null,
         task,
         focus,
       });
-      return { ok: true, id: post.id, subject: post.subject, publisher: post.publisher, task: post.task, body: post.body, focus: post.focus, author: post.author, createdAt: post.createdAt };
+      return { ok: true, id: post.id, subject: post.subject, publisher: post.publisher, publisherSessionId: post.publisherSessionId, task: post.task, body: post.body, focus: post.focus, author: post.author, createdAt: post.createdAt };
     },
     isConcurrencySafe: () => false,
     timeoutMs: 10000,
@@ -304,6 +316,7 @@ function registerTools(ctx, store) {
                 kind: { type: 'string' },
                 subject: { type: 'string' },
                 publisher: { type: 'string' },
+                publisherSessionId: { type: 'string' },
                 task: { type: 'string' },
                 focus: { type: 'string' },
               },
@@ -334,6 +347,7 @@ function registerTools(ctx, store) {
           kind: post.kind === 'tip' ? 'tip' : 'post',
           ...(post.subject ? { subject: post.subject } : {}),
           ...(post.publisher ? { publisher: post.publisher } : {}),
+          ...(post.publisherSessionId ? { publisherSessionId: post.publisherSessionId } : {}),
           ...(post.task ? { task: post.task } : {}),
           ...(post.focus ? { focus: post.focus } : {}),
         }));
@@ -386,7 +400,8 @@ function registerTools(ctx, store) {
         to: { type: 'string', description: 'recipient label, default 我' },
         subject: { type: 'string', description: 'subject, at most 200 characters' },
         body: { type: 'string', description: 'mail body, at most 20000 characters' },
-        deliver: { type: 'boolean', description: 'start a recipient Session after sending; default false' },
+        deliver: { type: 'boolean', description: 'deliver a NEW MAIL prompt after sending; default false' },
+        targetSessionId: { type: 'string', description: 'optional existing Session id from a tip publisherSessionId; reuses that agent instead of creating a Session' },
       },
       required: ['subject', 'body'],
     },
@@ -410,8 +425,9 @@ function registerTools(ctx, store) {
         subject: text(args.subject, 'subject', MAX_TITLE),
         body: text(args.body, 'body', MAX_BODY),
       });
-      const sessionId = args.deliver === true
-        ? await startSessionFromMail(ctx, store, message, undefined, { delivery: true, signal: exec?.signal })
+      const targetSessionId = typeof args.targetSessionId === 'string' && args.targetSessionId.trim() !== '' ? args.targetSessionId.trim() : undefined;
+      const sessionId = args.deliver === true || targetSessionId !== undefined
+        ? await startSessionFromMail(ctx, store, message, undefined, { delivery: true, signal: exec?.signal, targetSessionId })
         : undefined;
       return { ok: true, id: message.id, subject: message.subject, createdAt: message.createdAt, ...(sessionId ? { sessionId } : {}) };
     },

@@ -121,6 +121,7 @@ test('an Agent can submit one timed tip with subject, publisher, task, post and 
   assert.equal(tip.ok, true);
   assert.equal(tip.subject, 'Threaded mail replies');
   assert.equal(tip.publisher, 'session-abc');
+  assert.equal(tip.publisherSessionId, 'session-abc');
   assert.equal(tip.task, 'Threaded mail replies');
   assert.equal(tip.body, 'A tip post that explains the thread model.');
   assert.equal(tip.focus, 'Store replyTo and threadId so the UI can group replies.');
@@ -132,6 +133,7 @@ test('an Agent can submit one timed tip with subject, publisher, task, post and 
   assert.equal(list.posts[0].kind, 'tip');
   assert.equal(list.posts[0].subject, 'Threaded mail replies');
   assert.equal(list.posts[0].publisher, 'session-abc');
+  assert.equal(list.posts[0].publisherSessionId, 'session-abc');
   assert.equal(list.posts[0].body, 'A tip post that explains the thread model.');
   assert.equal(list.posts[0].task, 'Threaded mail replies');
   assert.equal(list.posts[0].focus, 'Store replyTo and threadId so the UI can group replies.');
@@ -173,6 +175,22 @@ test('mail_send can deliver a NEW MAIL Session into the named workspace', async 
   assert.equal(created[0].workspaceId, 'workspace-test');
   assert.match(prompts[0].content[0].text, /\[NEW MAIL\]/);
   assert.match(prompts[0].content[0].text, /leidian/);
+});
+
+test('targetSessionId reuses an existing agent instead of creating a Session', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'dte-plugin-'));
+  process.env.DSH_PROFILE_DIR = root;
+  const { tools, created, prompts } = await makeContext(root);
+  const mail = await tools.get('dshtips_mail_send').execute({
+    to: 'leidian',
+    subject: 'Follow-up',
+    body: 'Continue the consultation.',
+    deliver: true,
+    targetSessionId: 'session-existing',
+  });
+  assert.equal(mail.sessionId, 'session-existing');
+  assert.equal(created.length, 0);
+  assert.equal(prompts[0].sessionId, 'session-existing');
 });
 
 test('a UI send starts a recipient Session with a NEW MAIL notice', async () => {
