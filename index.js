@@ -96,7 +96,7 @@ async function startSessionFromMail(ctx, store, message, currentSessionId, { del
   if (sessionId === undefined) {
     const address = String(message.to ?? '').trim();
     if (!/^session-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(address)) {
-      throw new Error('recipient must be an explicit mailbox address (session-<uuid>), not a workspace or label');
+      throw new Error('mail delivery never creates sessions: recipient must be an existing explicit mailbox address (session-<uuid>)');
     }
     sessionId = address;
   }
@@ -107,7 +107,7 @@ async function startSessionFromMail(ctx, store, message, currentSessionId, { del
   try {
     await ctx.sessionController.inspect(sessionId);
   } catch {
-    throw new Error('recipient mailbox does not identify an existing session');
+    throw new Error('mail delivery never creates sessions: recipient mailbox does not identify an existing session');
   }
   const requestId = randomUUID();
   const oneLine = (value) => String(value).replace(/[\r\n]+/g, ' ').slice(0, 300);
