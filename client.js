@@ -45,6 +45,7 @@ window.__ModuleLoader__.load({
         'mail.reply': '回复',
         'mail.replyPlaceholder': '写回复…',
         'mail.thread': '同一线程',
+        'mail.deliver': '发送后启动收信会话',
         'mail.replies': '{n} 条回复',
         'error.load': '读取失败：{message}',
         'error.action': '操作失败：{message}',
@@ -90,6 +91,7 @@ window.__ModuleLoader__.load({
         'mail.reply': 'Reply',
         'mail.replyPlaceholder': 'Write a reply…',
         'mail.thread': 'Thread',
+        'mail.deliver': 'Start a recipient Session after sending',
         'mail.replies': '{n} replies',
         'error.load': 'Load failed: {message}',
         'error.action': 'Action failed: {message}',
@@ -143,6 +145,7 @@ window.__ModuleLoader__.load({
       .dte-input, .dte-textarea { width: 100%; box-sizing: border-box; border: 1px solid var(--dsw-alias-border-l2); border-radius: 7px; background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); font: inherit; font-size: 12px; padding: 7px 8px; }
       .dte-textarea { min-height: 96px; resize: vertical; line-height: 1.5; }
       .dte-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+      .dte-check { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--dsw-alias-label-secondary); }
       .dte-btn { appearance: none; border: 1px solid var(--dsw-alias-border-l2); background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); font: inherit; font-size: 11px; border-radius: 7px; padding: 6px 10px; cursor: pointer; }
       .dte-btn:hover:not(:disabled) { background: var(--dsw-alias-bg-layer-2); border-color: var(--dsw-alias-brand-primary); }
       .dte-btn.primary { color: var(--dsw-alias-brand-primary); border-color: var(--dsw-alias-brand-primary); }
@@ -203,13 +206,14 @@ window.__ModuleLoader__.load({
       const [body, setBody] = useState('');
       const [tags, setTags] = useState('');
       const [to, setTo] = useState('我');
+      const [deliver, setDeliver] = useState(true);
       const isMail = kind === 'mail';
       return h('form', {
         className: 'dte-form',
         onSubmit: (event) => {
           event.preventDefault();
           onSubmit(isMail
-            ? { action: 'send', to, subject: title, body }
+            ? { action: 'send', to, subject: title, body, deliver }
             : { action: 'post', title, body, tags: tags.split(/[,，]/).map((tag) => tag.trim()).filter(Boolean) });
         },
       },
@@ -220,6 +224,7 @@ window.__ModuleLoader__.load({
           h('input', { className: 'dte-input', value: tags, onChange: (e) => setTags(e.target.value), maxLength: 200 })) : null,
         h(Field, { label: isMail ? t('mail.body') : t('forum.body') },
           h('textarea', { className: 'dte-textarea', value: body, onChange: (e) => setBody(e.target.value), required: true, maxLength: 20000 })),
+        isMail ? h('label', { className: 'dte-check' }, h('input', { type: 'checkbox', checked: deliver, onChange: (e) => setDeliver(e.target.checked) }), t('mail.deliver')) : null,
         h('div', { className: 'dte-actions' },
           h('button', { type: 'submit', className: 'dte-btn primary' }, isMail ? t('mail.send') : t('forum.publish')),
           h('button', { type: 'button', className: 'dte-btn', onClick: onCancel }, t('forum.cancel')),
@@ -439,6 +444,20 @@ window.__ModuleLoader__.load({
         };
       }, [load]);
 
+      const openSession = useCallback((sessionId) => {
+        if (typeof sessionId !== 'string' || sessionId === '') return;
+        const workspace = ctx.get?.('uiWorkspace');
+        if (!workspace || typeof workspace.openSession !== 'function') return;
+        const open = (attempt = 0) => {
+          try {
+            workspace.openSession(sessionId);
+          } catch {
+            if (attempt < 5) window.setTimeout(() => open(attempt + 1), 300);
+          }
+        };
+        open();
+      }, [ctx]);
+
       const action = useCallback(async (payload) => {
         setBusy(true);
         setError('');
@@ -456,6 +475,7 @@ window.__ModuleLoader__.load({
             throw new Error((body && body.message) || `HTTP ${response.status}`);
           }
           if (body.value) setData(body.value);
+          if (typeof body.sessionId === 'string') openSession(body.sessionId);
           return body;
         } catch (actionError) {
           const message = t('error.action', { message: actionError instanceof Error ? actionError.message : String(actionError) });
@@ -464,7 +484,7 @@ window.__ModuleLoader__.load({
         } finally {
           setBusy(false);
         }
-      }, [t]);
+      }, [openSession, t]);
 
       const start = useCallback(async (messageId) => {
         setBusy(true);
@@ -483,17 +503,7 @@ window.__ModuleLoader__.load({
             throw new Error((body && body.message) || `HTTP ${response.status}`);
           }
           if (body.value) setData(body.value);
-          const workspace = ctx.get?.('uiWorkspace');
-          if (workspace && typeof workspace.openSession === 'function') {
-            const open = (attempt = 0) => {
-              try {
-                workspace.openSession(body.sessionId);
-              } catch {
-                if (attempt < 5) window.setTimeout(() => open(attempt + 1), 300);
-              }
-            };
-            open();
-          }
+          openSession(body.sessionId);
           return body;
         } catch (startError) {
           const message = t('error.start', { message: startError instanceof Error ? startError.message : String(startError) });
@@ -502,7 +512,7 @@ window.__ModuleLoader__.load({
         } finally {
           setBusy(false);
         }
-      }, [ctx, currentSessionId, t]);
+      }, [currentSessionId, openSession, t]);
 
       if (!data) {
         return h('div', { className: 'dte-panel' },

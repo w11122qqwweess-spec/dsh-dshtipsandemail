@@ -107,6 +107,26 @@ test('agents can post, reply, send and read', async () => {
   assert.equal(after.messages.length, 1);
 });
 
+test('a UI send starts a recipient Session with a NEW MAIL notice', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'dte-plugin-'));
+  process.env.DSH_PROFILE_DIR = root;
+  const { routes, created, prompts } = await makeContext(root);
+  const response = await routes.get('/api/dshtipsandemail/action').fetch(request({
+    action: 'send',
+    to: '收信方',
+    subject: 'Handoff',
+    body: 'Please take this over.',
+    deliver: true,
+  }));
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.sessionId, 'session-from-mail');
+  assert.equal(created.length, 1);
+  assert.equal(prompts.length, 1);
+  assert.match(prompts[0].content[0].text, /\[NEW MAIL\]/);
+  assert.equal(body.value.messages[0].startedSessionId, 'session-from-mail');
+});
+
 test('the UI action creates a threaded mail reply', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'dte-plugin-'));
   process.env.DSH_PROFILE_DIR = root;

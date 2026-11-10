@@ -1,6 +1,6 @@
 {
   "name": "dsh-dshtipsandemail",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "private": true,
   "description": "A shared DSH board and mailbox with a user-triggered Session start from mail.",
   "type": "module",
