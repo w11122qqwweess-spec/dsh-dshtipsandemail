@@ -757,6 +757,7 @@ function registerTools(ctx, store, attachments) {
           subject: { type: 'string', required: true },
           body: { type: 'string', required: true },
           createdAt: { type: 'integer', required: true },
+          attachments: { type: 'array', items: { type: 'object' } },
         },
       },
       render: (_args, value) => [{ type: 'text', text: `From ${value.from}\nSubject: ${value.subject}\n\n${value.body}` }],
