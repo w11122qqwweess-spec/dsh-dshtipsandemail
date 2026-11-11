@@ -4,11 +4,14 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 import {
   MAX_BODY,
   MAX_TITLE,
   TipsAndEmailStore,
 } from './lib/store.js';
+import { AttachmentStore, MAX_ATTACHMENTS_PER_MAIL, MAX_ATTACHMENT_BYTES, MAX_MAIL_ATTACHMENT_BYTES } from './lib/attachments.js';
 
 export const name = 'dsh-dshtipsandemail';
 export const inject = ['tools', 'connection', 'sessionController', 'workingDirectory', 'systemPrompt'];
@@ -156,7 +159,22 @@ async function startSessionFromMail(ctx, store, message, currentSessionId, { del
   return sessionId;
 }
 
-function registerTools(ctx, store) {
+function attachmentMetadata(store, ids) {
+  if (ids === undefined || ids === null) return [];
+  if (!Array.isArray(ids)) throw new Error('attachmentIds must be an array');
+  if (ids.length > MAX_ATTACHMENTS_PER_MAIL) throw new Error(`at most ${MAX_ATTACHMENTS_PER_MAIL} attachments are allowed`);
+  let total = 0;
+  const out = [];
+  for (const id of ids) {
+    const { meta } = store.get(String(id));
+    total += meta.size;
+    if (total > MAX_MAIL_ATTACHMENT_BYTES) throw new Error('attachments exceed the mail size budget');
+    out.push({ id: meta.id, name: meta.name, size: meta.size, type: meta.type });
+  }
+  return out;
+}
+
+function registerTools(ctx, store, attachments) {
   const disposers = [];
   const add = (definition) => {
     definition.parameters = compileSchema(definition.parameters);
@@ -225,6 +243,90 @@ function registerTools(ctx, store) {
     },
     isConcurrencySafe: () => false,
     timeoutMs: 10000,
+  });
+
+  add({
+    name: `${TOOL_PREFIX}_attach`,
+    description: 'Upload one local file to the central mailbox attachment store and return an attachment id for dshtips_mail_send or dshtips_mail_reply.',
+    parameters: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        file: { type: 'string', description: 'file path; relative paths resolve against the agent workspace' },
+        name: { type: 'string', description: 'optional display file name' },
+        type: { type: 'string', description: 'optional MIME type' },
+      },
+      required: ['file'],
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          ok: { type: 'boolean', required: true },
+          id: { type: 'string', required: true },
+          name: { type: 'string', required: true },
+          size: { type: 'integer', required: true },
+          type: { type: 'string', required: true },
+        },
+      },
+      render: (_args, value) => [{ type: 'text', text: `Attached ${value.name} (${value.size} bytes) as ${value.id}.` }],
+    },
+    execute: async (args, exec) => {
+      const cwd = exec?.agent?.session?.header?.cwd ?? ctx.workingDirectory.defaultDirectory;
+      const target = path.resolve(cwd, String(args.file));
+      const link = fs.lstatSync(target);
+      if (link.isSymbolicLink()) throw new Error('symlink attachments are not allowed');
+      if (!link.isFile()) throw new Error('attachment path must be a regular file');
+      if (link.size > MAX_ATTACHMENT_BYTES) throw new Error(`attachment must be at most ${MAX_ATTACHMENT_BYTES} bytes`);
+      const real = fs.realpathSync(target);
+      const name = typeof args.name === 'string' && args.name.trim() !== '' ? args.name.trim() : path.basename(real);
+      const type = typeof args.type === 'string' && args.type.trim() !== '' ? args.type.trim() : 'application/octet-stream';
+      const meta = attachments.put(fs.readFileSync(real), name, type);
+      return { ok: true, id: meta.id, name: meta.name, size: meta.size, type: meta.type };
+    },
+    isConcurrencySafe: () => false,
+    timeoutMs: 30000,
+  });
+
+  add({
+    name: `${TOOL_PREFIX}_download`,
+    description: 'Download one central mailbox attachment into the agent workspace.',
+    parameters: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        attachmentId: { type: 'string', description: 'attachment id returned by the mail' },
+        path: { type: 'string', description: 'optional target path; defaults to the original name' },
+      },
+      required: ['attachmentId'],
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          ok: { type: 'boolean', required: true },
+          path: { type: 'string', required: true },
+          name: { type: 'string', required: true },
+          size: { type: 'integer', required: true },
+        },
+      },
+      render: (_args, value) => [{ type: 'text', text: `Downloaded ${value.name} to ${value.path}.` }],
+    },
+    execute: async (args, exec) => {
+      const cwd = exec?.agent?.session?.header?.cwd ?? ctx.workingDirectory.defaultDirectory;
+      const { meta, buffer } = attachments.get(args.attachmentId);
+      const relative = typeof args.path === 'string' && args.path.trim() !== '' ? args.path.trim() : meta.name;
+      const target = path.resolve(cwd, relative);
+      const rel = path.relative(cwd, target);
+      if (rel.startsWith('..') || path.isAbsolute(rel)) throw new Error('download path must stay inside the agent workspace');
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, buffer, { flag: 'wx', mode: 0o600 });
+      return { ok: true, path: target, name: meta.name, size: meta.size };
+    },
+    isConcurrencySafe: () => false,
+    timeoutMs: 30000,
   });
 
   add({
@@ -445,6 +547,7 @@ function registerTools(ctx, store) {
         body: { type: 'string', description: 'mail body, at most 20000 characters' },
         deliver: { type: 'boolean', description: 'deliver a NEW MAIL prompt after sending; default false' },
         targetSessionId: { type: 'string', description: 'optional existing Session id from a tip publisherSessionId; reuses that agent instead of creating a Session' },
+        attachmentIds: { type: 'array', items: { type: 'string' }, description: 'attachment ids returned by dshtips_attach; at most 5' },
       },
       required: ['subject', 'body'],
     },
@@ -458,21 +561,24 @@ function registerTools(ctx, store) {
           subject: { type: 'string', required: true },
           createdAt: { type: 'integer', required: true },
           sessionId: { type: 'string' },
+          attachments: { type: 'array', items: { type: 'object' } },
         },
       },
       render: (_args, value) => [{ type: 'text', text: `Mail sent: "${value.subject}" (${value.id}).${value.sessionId ? ` Recipient Session ${value.sessionId}.` : ''}` }],
     },
     execute: async (args, exec) => {
+      const selectedAttachments = attachmentMetadata(attachments, args.attachmentIds);
       const message = store.send({
         to: args.to,
         subject: text(args.subject, 'subject', MAX_TITLE),
         body: text(args.body, 'body', MAX_BODY),
+        attachments: selectedAttachments,
       });
       const targetSessionId = typeof args.targetSessionId === 'string' && args.targetSessionId.trim() !== '' ? args.targetSessionId.trim() : undefined;
       const sessionId = args.deliver === true || targetSessionId !== undefined
         ? await startSessionFromMail(ctx, store, message, undefined, { delivery: true, signal: exec?.signal, targetSessionId })
         : undefined;
-      return { ok: true, id: message.id, subject: message.subject, createdAt: message.createdAt, ...(sessionId ? { sessionId } : {}) };
+      return { ok: true, id: message.id, subject: message.subject, createdAt: message.createdAt, attachments: message.attachments, ...(sessionId ? { sessionId } : {}) };
     },
     isConcurrencySafe: () => false,
     timeoutMs: 10000,
@@ -512,6 +618,7 @@ function registerTools(ctx, store) {
                 read: { type: 'boolean', required: true },
                 createdAt: { type: 'integer', required: true },
                 startedSessionId: { type: 'string' },
+                attachments: { type: 'array', items: { type: 'object' } },
                 replyTo: { type: 'string' },
                 threadId: { type: 'string' },
               },
@@ -538,6 +645,7 @@ function registerTools(ctx, store) {
           read: message.read,
           createdAt: message.createdAt,
           ...(message.startedSessionId ? { startedSessionId: message.startedSessionId } : {}),
+          attachments: message.attachments || [],
           ...(message.replyTo ? { replyTo: message.replyTo } : {}),
           ...(message.threadId ? { threadId: message.threadId } : {}),
         }));
@@ -597,6 +705,7 @@ function registerTools(ctx, store) {
       properties: {
         messageId: { type: 'string', description: 'message id to reply to' },
         body: { type: 'string', description: 'reply body, at most 20000 characters' },
+        attachmentIds: { type: 'array', items: { type: 'string' }, description: 'attachment ids returned by dshtips_attach; at most 5' },
       },
       required: ['messageId', 'body'],
     },
@@ -611,13 +720,15 @@ function registerTools(ctx, store) {
           replyTo: { type: 'string', required: true },
           subject: { type: 'string', required: true },
           createdAt: { type: 'integer', required: true },
+          attachments: { type: 'array', items: { type: 'object' } },
         },
       },
       render: (_args, value) => [{ type: 'text', text: `Replied to ${value.replyTo} in thread ${value.threadId}.` }],
     },
     execute: async (args) => {
-      const reply = store.replyMail({ messageId: text(args.messageId, 'messageId', 120), body: text(args.body, 'body', MAX_BODY), from: 'DSH' });
-      return { ok: true, id: reply.id, threadId: reply.threadId, replyTo: reply.replyTo, subject: reply.subject, createdAt: reply.createdAt };
+      const selectedAttachments = attachmentMetadata(attachments, args.attachmentIds);
+      const reply = store.replyMail({ messageId: text(args.messageId, 'messageId', 120), body: text(args.body, 'body', MAX_BODY), from: 'DSH', attachments: selectedAttachments });
+      return { ok: true, id: reply.id, threadId: reply.threadId, replyTo: reply.replyTo, subject: reply.subject, createdAt: reply.createdAt, attachments: reply.attachments };
     },
     isConcurrencySafe: () => false,
     timeoutMs: 10000,
@@ -660,6 +771,7 @@ function registerTools(ctx, store) {
         subject: message.subject,
         body: message.body,
         createdAt: message.createdAt,
+        attachments: message.attachments,
       };
     },
     isConcurrencySafe: () => false,
@@ -671,8 +783,50 @@ function registerTools(ctx, store) {
   };
 }
 
-function registerRoutes(ctx, store) {
+function registerRoutes(ctx, store, attachments) {
   const routes = [
+    ctx.connection.fetch.register({
+      path: '/api/dshtipsandemail/attachment',
+      methods: ['GET', 'POST'],
+      requestBody: 'buffered',
+      fetch: async (request) => {
+        if (request.method === 'GET') {
+          const id = new URL(request.url).searchParams.get('id') ?? '';
+          try {
+            const { meta, buffer } = attachments.get(id);
+            const name = meta.name.replace(/[\u000d\u000a]/g, '_');
+            return new Response(buffer, {
+              status: 200,
+              headers: {
+                'content-type': meta.type,
+                'content-length': String(buffer.length),
+                'content-disposition': `attachment; filename="${name.replace(/[^ -~]/g, '_')}"; filename*=UTF-8''${encodeURIComponent(name)}`,
+                'cache-control': 'private, no-store',
+                'x-content-type-options': 'nosniff',
+              },
+            });
+          } catch {
+            return failure(404, 'DSHTIPS_ATTACHMENT_NOT_FOUND', 'attachment not found');
+          }
+        }
+        if (request.method !== 'POST') return failure(405, 'DSHTIPS_METHOD', 'method not allowed');
+        if (!sameOrigin(request)) return failure(403, 'DSHTIPS_ORIGIN', 'origin is not allowed');
+        if (request.headers.get('x-dshtipsandemail') !== '1') return failure(403, 'DSHTIPS_HEADER', 'missing request header');
+        const length = Number(request.headers.get('content-length') ?? '0');
+        if (Number.isFinite(length) && length > MAX_ATTACHMENT_BYTES) return failure(413, 'DSHTIPS_ATTACHMENT_TOO_LARGE', 'attachment is too large');
+        const encodedName = request.headers.get('x-file-name') ?? '';
+        let name = 'attachment';
+        try { name = decodeURIComponent(encodedName) || name; } catch { name = encodedName || name; }
+        const type = request.headers.get('content-type') || 'application/octet-stream';
+        try {
+          const buffer = Buffer.from(await request.arrayBuffer());
+          const meta = attachments.put(buffer, name, type);
+          return json({ ok: true, attachment: meta });
+        } catch (error) {
+          return failure(400, 'DSHTIPS_ATTACHMENT_FAILED', error instanceof Error ? error.message : 'attachment upload failed');
+        }
+      },
+    }),
     ctx.connection.fetch.register({
       path: '/api/dshtipsandemail/state',
       methods: ['GET'],
@@ -702,14 +856,14 @@ function registerRoutes(ctx, store) {
           } else if (body.action === 'reply') {
             store.reply({ postId: text(body.postId, 'postId', 120), body: text(body.body, 'body', MAX_BODY) });
           } else if (body.action === 'send') {
-            const message = store.send({ to: body.to, subject: text(body.subject, 'subject', MAX_TITLE), body: text(body.body, 'body', MAX_BODY) });
+            const message = store.send({ to: body.to, subject: text(body.subject, 'subject', MAX_TITLE), body: text(body.body, 'body', MAX_BODY), attachments: attachmentMetadata(attachments, body.attachmentIds) });
             let sessionId;
             if (body.deliver !== false) {
               sessionId = await startSessionFromMail(ctx, store, message, typeof body.sessionId === 'string' ? body.sessionId : undefined, { delivery: true });
             }
             return json({ ok: true, sessionId, value: store.snapshot() });
           } else if (body.action === 'replyMail') {
-            store.replyMail({ messageId: text(body.messageId, 'messageId', 120), body: text(body.body, 'body', MAX_BODY), from: '我' });
+            store.replyMail({ messageId: text(body.messageId, 'messageId', 120), body: text(body.body, 'body', MAX_BODY), from: '我', attachments: attachmentMetadata(attachments, body.attachmentIds) });
           } else if (body.action === 'read') {
             store.markRead(text(body.messageId, 'messageId', 120), true);
           } else if (body.action === 'start') {
@@ -735,6 +889,7 @@ function registerRoutes(ctx, store) {
 
 export function apply(ctx) {
   const store = new TipsAndEmailStore();
+  const attachments = new AttachmentStore(path.join(path.dirname(store.file), 'attachments'));
   ctx.effect(() => ctx.systemPrompt.section({
     name: 'dshtips-task-tips',
     order: 870,
@@ -746,6 +901,6 @@ export function apply(ctx) {
       'Other Agents can search existing tips with `dshtips_list` using `query`, `kind: "tip"` or `publisher` before starting related work.',
     ].join('\n'),
   }));
-  ctx.effect(() => registerTools(ctx, store));
-  ctx.effect(() => registerRoutes(ctx, store));
+  ctx.effect(() => registerTools(ctx, store, attachments));
+  ctx.effect(() => registerRoutes(ctx, store, attachments));
 }

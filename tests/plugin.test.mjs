@@ -86,13 +86,15 @@ function request(body) {
   });
 }
 
-test('registers ten tools and two authenticated routes', async () => {
+test('registers twelve tools and three authenticated routes', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'dte-plugin-'));
   process.env.DSH_PROFILE_DIR = root;
   const { tools, routes } = await makeContext(root);
   assert.deepEqual([...tools.keys()].sort(), [
     'dshtips_archive',
+    'dshtips_attach',
     'dshtips_directory',
+    'dshtips_download',
     'dshtips_list',
     'dshtips_mail_list',
     'dshtips_mail_read',
@@ -104,6 +106,7 @@ test('registers ten tools and two authenticated routes', async () => {
   ]);
   assert.deepEqual([...routes.keys()].sort(), [
     '/api/dshtipsandemail/action',
+    '/api/dshtipsandemail/attachment',
     '/api/dshtipsandemail/state',
   ]);
 });
@@ -180,6 +183,49 @@ test('archive only accepts a Session started by this mailbox', async () => {
   const result = await tools.get('dshtips_archive').execute({ sessionId: mail.sessionId });
   assert.equal(result.ok, true);
   assert.deepEqual(archived, [mail.sessionId]);
+});
+
+test('central attachment upload, mail metadata and download', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'dte-plugin-'));
+  process.env.DSH_PROFILE_DIR = root;
+  const { tools, routes } = await makeContext(root);
+  const source = path.join(root, 'source.txt');
+  await fs.writeFile(source, 'attachment body', 'utf8');
+  const exec = { agent: { session: { header: { cwd: root } } } };
+  const attached = await tools.get('dshtips_attach').execute({ file: 'source.txt', name: 'report.txt' }, exec);
+  assert.match(attached.id, /^att-/);
+  assert.equal(attached.name, 'report.txt');
+
+  const mail = await tools.get('dshtips_mail_send').execute({
+    to: SESSION,
+    subject: 'With file',
+    body: 'See attachment',
+    deliver: true,
+    attachmentIds: [attached.id],
+  }, { agent: { session: { header: { cwd: root } } } });
+  assert.equal(mail.attachments.length, 1);
+  assert.equal(mail.attachments[0].id, attached.id);
+
+  const read = await tools.get('dshtips_mail_read').execute({ messageId: mail.id });
+  assert.equal(read.attachments[0].name, 'report.txt');
+  const downloaded = await tools.get('dshtips_download').execute({ attachmentId: attached.id, path: 'got.txt' }, exec);
+  assert.equal(await fs.readFile(downloaded.path, 'utf8'), 'attachment body');
+
+  const upload = await routes.get('/api/dshtipsandemail/attachment').fetch(new Request('http://127.0.0.1:50833/api/dshtipsandemail/attachment', {
+    method: 'POST',
+    headers: {
+      'content-type': 'text/plain',
+      'x-dshtipsandemail': '1',
+      'x-file-name': encodeURIComponent('http.txt'),
+      origin: 'http://127.0.0.1:50833',
+    },
+    body: Buffer.from('http attachment'),
+  }));
+  assert.equal(upload.status, 200);
+  const uploaded = await upload.json();
+  const download = await routes.get('/api/dshtipsandemail/attachment').fetch(new Request(`http://127.0.0.1:50833/api/dshtipsandemail/attachment?id=${encodeURIComponent(uploaded.attachment.id)}`));
+  assert.equal(download.status, 200);
+  assert.equal(await download.text(), 'http attachment');
 });
 
 test('every live agent and subagent has a mailbox address', async () => {

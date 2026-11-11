@@ -142,6 +142,9 @@ window.__ModuleLoader__.load({
       .dte-tip-badge { display: inline-block; font-size: 9px; font-weight: 700; letter-spacing: .08em; color: var(--dsw-alias-brand-primary); border: 1px solid var(--dsw-alias-brand-primary); border-radius: 4px; padding: 1px 4px; margin-right: 5px; }
       .dte-tip-label { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--dsw-alias-label-secondary); margin-top: 12px; }
       .dte-tip-value { font-size: 13px; line-height: 1.55; margin-top: 3px; overflow-wrap: anywhere; }
+      .dte-attachments { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; }
+      .dte-attachment { display: inline-flex; align-items: center; gap: 5px; width: fit-content; max-width: 100%; font-size: 11px; color: var(--dsw-alias-brand-primary); text-decoration: none; border: 1px solid var(--dsw-alias-border-l1); border-radius: 6px; padding: 4px 7px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .dte-attachment:hover { border-color: var(--dsw-alias-brand-primary); }
       .dte-tag { font-size: 10px; color: var(--dsw-alias-label-secondary); border: 1px solid var(--dsw-alias-border-l1); border-radius: 999px; padding: 2px 7px; }
       .dte-thread { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
       .dte-thread-item { border: 1px solid var(--dsw-alias-border-l1); background: var(--dsw-alias-bg-layer-1); border-radius: 9px; padding: 10px; }
@@ -214,20 +217,47 @@ window.__ModuleLoader__.load({
       return h('label', { className: 'dte-field' }, h('span', null, label), children);
     }
 
-    function Composer({ t, onCancel, onSubmit, kind }) {
+    async function uploadAttachment(file) {
+      const response = await fetch('api/dshtipsandemail/attachment', {
+        method: 'POST',
+        headers: {
+          'x-dshtipsandemail': '1',
+          'x-file-name': encodeURIComponent(file.name),
+          'content-type': file.type || 'application/octet-stream',
+        },
+        body: file,
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data || data.ok !== true || !data.attachment) {
+        throw new Error((data && data.message) || `HTTP ${response.status}`);
+      }
+      return data.attachment.id;
+    }
+
+    function Composer({ t, onCancel, onSubmit, kind, onError }) {
       const [title, setTitle] = useState('');
       const [body, setBody] = useState('');
       const [tags, setTags] = useState('');
       const [to, setTo] = useState('我');
       const [deliver, setDeliver] = useState(true);
+      const [files, setFiles] = useState([]);
+      const [uploadError, setUploadError] = useState('');
       const isMail = kind === 'mail';
       return h('form', {
         className: 'dte-form',
-        onSubmit: (event) => {
+        onSubmit: async (event) => {
           event.preventDefault();
-          onSubmit(isMail
-            ? { action: 'send', to, subject: title, body, deliver }
-            : { action: 'post', title, body, tags: tags.split(/[,，]/).map((tag) => tag.trim()).filter(Boolean) });
+          setUploadError('');
+          try {
+            const attachmentIds = isMail ? await Promise.all(files.map(uploadAttachment)) : [];
+            await onSubmit(isMail
+              ? { action: 'send', to, subject: title, body, deliver, attachmentIds }
+              : { action: 'post', title, body, tags: tags.split(/[,，]/).map((tag) => tag.trim()).filter(Boolean) });
+          } catch (submitError) {
+            const message = submitError instanceof Error ? submitError.message : String(submitError);
+            setUploadError(message);
+            if (onError) onError(submitError);
+          }
         },
       },
         isMail ? h(Field, { label: t('mail.to') }, h('input', { className: 'dte-input', value: to, onChange: (e) => setTo(e.target.value), required: true })) : null,
@@ -238,6 +268,10 @@ window.__ModuleLoader__.load({
         h(Field, { label: isMail ? t('mail.body') : t('forum.body') },
           h('textarea', { className: 'dte-textarea', value: body, onChange: (e) => setBody(e.target.value), required: true, maxLength: 20000 })),
         isMail ? h('label', { className: 'dte-check' }, h('input', { type: 'checkbox', checked: deliver, onChange: (e) => setDeliver(e.target.checked) }), t('mail.deliver')) : null,
+        isMail ? h(Field, { label: t('mail.attachments') },
+          h('input', { className: 'dte-input', type: 'file', multiple: true, onChange: (e) => setFiles(Array.from(e.target.files || []).slice(0, 5)) }),
+          files.length > 0 ? h('span', { className: 'dte-item-meta' }, files.map((file) => file.name).join(', ')) : null) : null,
+        uploadError ? h('div', { className: 'dte-alert', role: 'alert' }, uploadError) : null,
         h('div', { className: 'dte-actions' },
           h('button', { type: 'submit', className: 'dte-btn primary' }, isMail ? t('mail.send') : t('forum.publish')),
           h('button', { type: 'button', className: 'dte-btn', onClick: onCancel }, t('forum.cancel')),
@@ -392,6 +426,16 @@ window.__ModuleLoader__.load({
               thread.map((message) => h('div', { className: `dte-thread-item${selected.id === message.id ? ' current' : ''}`, key: message.id },
                 h('div', { className: 'dte-thread-meta' }, `${message.from} → ${message.to} · ${formatTime(message.createdAt)}`),
                 h('div', { className: 'dte-body' }, message.body),
+                (message.attachments || []).length > 0 ? h('div', { className: 'dte-attachments' },
+                  h('div', { className: 'dte-tip-label' }, t('mail.attachments')),
+                  message.attachments.map((file) => h('a', {
+                    className: 'dte-attachment',
+                    key: file.id,
+                    href: `api/dshtipsandemail/attachment?id=${encodeURIComponent(file.id)}`,
+                    download: file.name,
+                    rel: 'noopener',
+                  }, `${file.name} · ${Math.max(1, Math.round(file.size / 1024))} KB`)),
+                ) : null,
               )),
               thread.length > 1 ? h('div', { className: 'dte-item-meta' }, t('mail.replies', { n: thread.length - 1 })) : null,
             ),
