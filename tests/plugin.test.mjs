@@ -16,6 +16,7 @@ async function makeContext(root) {
   const sections = [];
   const unarchived = [];
   const archived = [];
+  const wakeups = [];
   const ctx = {
     systemPrompt: {
       section(section) {
@@ -54,7 +55,12 @@ async function makeContext(root) {
     },
     get(name) {
       if (name === 'agents') {
-        return { list: () => [{ id: 'session-11111111-1111-1111-1111-111111111111' }, { id: '22222222-2222-2222-2222-222222222222' }] };
+        return {
+          list: () => [{ id: 'session-11111111-1111-1111-1111-111111111111' }, { id: '22222222-2222-2222-2222-222222222222' }],
+          get: (id) => id === '22222222-2222-2222-2222-222222222222'
+            ? { id, followup: (message) => { wakeups.push({ id, message }); } }
+            : undefined,
+        };
       }
       if (name === 'workspaceRegistry') {
         return {
@@ -71,7 +77,7 @@ async function makeContext(root) {
     },
   };
   apply(ctx);
-  return { tools, routes, created, prompts, sections, unarchived, archived };
+  return { tools, routes, created, prompts, sections, unarchived, archived, wakeups };
 }
 
 function request(body) {
@@ -243,7 +249,7 @@ test('every live agent and subagent has a mailbox address', async () => {
 test('mail can address a subagent mailbox without creating a Session', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'dte-plugin-'));
   process.env.DSH_PROFILE_DIR = root;
-  const { tools, created, prompts } = await makeContext(root);
+  const { tools, created, prompts, wakeups } = await makeContext(root);
   const mail = await tools.get('dshtips_mail_send').execute({
     to: 'subagent-22222222-2222-2222-2222-222222222222',
     subject: 'Subagent mail',
@@ -252,7 +258,9 @@ test('mail can address a subagent mailbox without creating a Session', async () 
   });
   assert.equal(mail.sessionId, '22222222-2222-2222-2222-222222222222');
   assert.equal(created.length, 0);
-  assert.equal(prompts[0].sessionId, '22222222-2222-2222-2222-222222222222');
+  assert.equal(prompts.length, 0);
+  assert.equal(wakeups.length, 1);
+  assert.match(wakeups[0].message.content[0].text, /NEW MAIL/);
 });
 
 test('mail_send rejects a workspace label but accepts an explicit session mailbox', async () => {

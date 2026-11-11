@@ -149,12 +149,33 @@ async function startSessionFromMail(ctx, store, message, currentSessionId, { del
       ? '这封邮件由用户确认投递。如果邮件要求回信，请直接使用 dshtips_mail_reply 回复本邮件，无需再次征询确认；其他有副作用操作仍需确认。'
       : '请根据这封邮件帮助用户。执行删除、发信、启动其他会话等有副作用操作前，先征得用户确认。',
   ].join('\n');
-  await ctx.sessionController.prompt({
-    requestId,
-    sessionId,
-    mode: 'queue',
-    content: [{ type: 'text', text: prompt }],
-  }, signal ?? new AbortController().signal);
+  const liveAgents = ctx.get?.('agents');
+  const subagent = liveAgents !== undefined
+    ? (typeof liveAgents.get === 'function' ? liveAgents.get(sessionId) : undefined)
+      ?? (typeof liveAgents.list === 'function' ? liveAgents.list().find((agent) => String(agent.id) === String(sessionId)) : undefined)
+    : undefined;
+  if (subagent !== undefined && !String(sessionId).startsWith('session-') && typeof subagent.followup === 'function') {
+    subagent.followup({
+      role: 'user',
+      id: randomUUID(),
+      content: [{ type: 'text', text: prompt }],
+      source: { kind: 'user', rpcId: randomUUID() },
+    });
+  } else {
+    try {
+      await ctx.sessionController.prompt({
+        requestId,
+        sessionId,
+        mode: 'queue',
+        content: [{ type: 'text', text: prompt }],
+      }, signal ?? new AbortController().signal);
+    } catch (error) {
+      if (!String(sessionId).startsWith('session-')) {
+        throw new Error('subagent is not live; keep it running for direct mail, or have its parent wake it / use a shared file mailbox');
+      }
+      throw error;
+    }
+  }
   store.markStarted(message.id, sessionId);
   return sessionId;
 }
