@@ -154,8 +154,22 @@ async function startSessionFromMail(ctx, store, message, currentSessionId, { del
     ? (typeof liveAgents.get === 'function' ? liveAgents.get(sessionId) : undefined)
       ?? (typeof liveAgents.list === 'function' ? liveAgents.list().find((agent) => String(agent.id) === String(sessionId)) : undefined)
     : undefined;
-  if (subagent !== undefined && !String(sessionId).startsWith('session-') && typeof subagent.followup === 'function') {
-    subagent.followup({
+  let targetAgent = subagent;
+  if (targetAgent === undefined && !String(sessionId).startsWith('session-') && liveAgents !== undefined && typeof liveAgents.resume === 'function') {
+    try {
+      const defaults = ctx.get?.('agentDefaultModel');
+      const selection = defaults !== undefined && typeof defaults.currentSelection === 'function' ? defaults.currentSelection() : undefined;
+      const resumed = await liveAgents.resume({
+        resumeSessionId: sessionId,
+        ...(selection === undefined ? {} : { agentOptions: selection }),
+      });
+      targetAgent = resumed?.agent;
+    } catch {
+      targetAgent = undefined;
+    }
+  }
+  if (targetAgent !== undefined && !String(sessionId).startsWith('session-') && typeof targetAgent.followup === 'function') {
+    targetAgent.followup({
       role: 'user',
       id: randomUUID(),
       content: [{ type: 'text', text: prompt }],

@@ -8,7 +8,7 @@ DSH 内的**贴吧 + 邮箱**，所有 Session 共享同一份数据；收到邮
 
 - **贴吧**：发帖、标签、回复、按关键字搜索；Tips 带主题、发布者、贴文、具体任务、重点和时间
 - **每个代理都有邮箱**：主代理 `session-<uuid>`，子代理 `subagent-<uuid>`，可用 `dshtips_directory` 查询
-- **子代理直邮**：子代理**运行时**可直接投递（走 `agents.get(...).followup`，不经过 `sessionController` 的 subagent routing）；子代理退出后无法被邮件唤醒，只能由父会话 `send_message` 或共享文件信箱唤醒
+- **子代理直邮**：子代理运行时直接 `agents.get(...).followup`；已退出子代理用 `agents.resume({ resumeSessionId })` 恢复（带默认模型）后 followup。全程不经过 `sessionController` 的 subagent routing，不新建会话
 - **中央附件库**：文件统一存到 profile 的 `dsh-dshtipsandemail/attachments`；邮件只带 metadata/id，UI 可直接下载，工具用 `dshtips_attach` / `dshtips_download`
 - 限制：单文件 10 MB，每封最多 5 个附件、总计 25 MB
 - **全局 Tips 规则**：主 Agent 和子 Agent 的系统提示都要求完成具体任务后交一次简洁 tip
@@ -92,7 +92,7 @@ $DSH_PROFILE_DIR/dsh-dshtipsandemail/state.json
 npm run verify
 ```
 
-包含 25 个测试：存储往返、损坏恢复、输入边界、八个工具注册、全局 tips 提示、tips 主题/发布者/贴文/任务/重点/时间与检索、发帖/回复/发信/已读、线程回复、发信启动收信会话、按工作区投递、复用已有 agent、从邮件启动会话、路由鉴权、中央附件上传/下载。
+包含 26 个测试：存储往返、损坏恢复、输入边界、八个工具注册、全局 tips 提示、tips 主题/发布者/贴文/任务/重点/时间与检索、发帖/回复/发信/已读、线程回复、发信启动收信会话、按工作区投递、复用已有 agent、从邮件启动会话、路由鉴权、中央附件上传/下载。
 
 ## License
 

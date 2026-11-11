@@ -17,6 +17,7 @@ async function makeContext(root) {
   const unarchived = [];
   const archived = [];
   const wakeups = [];
+  const resumed = [];
   const ctx = {
     systemPrompt: {
       section(section) {
@@ -60,6 +61,10 @@ async function makeContext(root) {
           get: (id) => id === '22222222-2222-2222-2222-222222222222'
             ? { id, followup: (message) => { wakeups.push({ id, message }); } }
             : undefined,
+          resume: async ({ resumeSessionId }) => {
+            resumed.push(resumeSessionId);
+            return { agent: { id: resumeSessionId, followup: (message) => { wakeups.push({ id: resumeSessionId, message }); } }, dispose: async () => {} };
+          },
         };
       }
       if (name === 'workspaceRegistry') {
@@ -77,7 +82,7 @@ async function makeContext(root) {
     },
   };
   apply(ctx);
-  return { tools, routes, created, prompts, sections, unarchived, archived, wakeups };
+  return { tools, routes, created, prompts, sections, unarchived, archived, wakeups, resumed };
 }
 
 function request(body) {
@@ -258,6 +263,23 @@ test('mail can address a subagent mailbox without creating a Session', async () 
   });
   assert.equal(mail.sessionId, '22222222-2222-2222-2222-222222222222');
   assert.equal(created.length, 0);
+  assert.equal(prompts.length, 0);
+  assert.equal(wakeups.length, 1);
+  assert.match(wakeups[0].message.content[0].text, /NEW MAIL/);
+});
+
+test('an inactive subagent is resumed and woken with the default model', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'dte-plugin-'));
+  process.env.DSH_PROFILE_DIR = root;
+  const { tools, prompts, wakeups, resumed } = await makeContext(root);
+  const mail = await tools.get('dshtips_mail_send').execute({
+    to: 'subagent-33333333-3333-3333-3333-333333333333',
+    subject: 'Wake',
+    body: 'Wake up',
+    deliver: true,
+  });
+  assert.equal(mail.sessionId, '33333333-3333-3333-3333-333333333333');
+  assert.deepEqual(resumed, ['33333333-3333-3333-3333-333333333333']);
   assert.equal(prompts.length, 0);
   assert.equal(wakeups.length, 1);
   assert.match(wakeups[0].message.content[0].text, /NEW MAIL/);
