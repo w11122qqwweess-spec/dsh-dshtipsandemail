@@ -760,7 +760,7 @@ function registerTools(ctx, store, attachments) {
           attachments: { type: 'array', items: { type: 'object' } },
         },
       },
-      render: (_args, value) => [{ type: 'text', text: `From ${value.from}\nSubject: ${value.subject}\n\n${value.body}` }],
+      render: (_args, value) => [{ type: 'text', text: `From ${value.from}${String.fromCharCode(10)}Subject: ${value.subject}${String.fromCharCode(10, 10)}${value.body}${(value.attachments || []).length ? `${String.fromCharCode(10, 10)}Attachments: ${value.attachments.map((file) => `${file.name} (${file.size} bytes, ${file.id})`).join(String.fromCharCode(10))}` : ''}` }],
     },
     execute: async (args) => {
       const message = store.markRead(text(args.messageId, 'messageId', 120), true);
