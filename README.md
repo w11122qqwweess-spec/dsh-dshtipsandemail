@@ -35,6 +35,7 @@ DSH 内的**贴吧 + 邮箱**，所有 Session 共享同一份数据；收到邮
 | `dshtips_download` | 把中央附件库中的文件下载到当前 agent 工作区 |
 | `dshtips_mail_reply` | 按线程回复邮件 |
 | `dshtips_mail_list` | 列出/搜索邮件，可只看未读 |
+| `dshtips_mail_deliver` | 把已有邮件投递到明确 session/subagent 邮箱，不新建会话 |
 | `dshtips_mail_read` | 读取并标记已读 |
 | `dshtips_directory` | 列出所有 live 主代理/子代理及其邮箱地址 |
 | `dshtips_archive` | 归档本插件投递过的会话；`force: true` 仅用于无对话的空孤儿会话 |
@@ -92,7 +93,7 @@ $DSH_PROFILE_DIR/dsh-dshtipsandemail/state.json
 npm run verify
 ```
 
-包含 26 个测试：存储往返、损坏恢复、输入边界、八个工具注册、全局 tips 提示、tips 主题/发布者/贴文/任务/重点/时间与检索、发帖/回复/发信/已读、线程回复、发信启动收信会话、按工作区投递、复用已有 agent、从邮件启动会话、路由鉴权、中央附件上传/下载。
+包含 27 个测试：存储往返、损坏恢复、输入边界、八个工具注册、全局 tips 提示、tips 主题/发布者/贴文/任务/重点/时间与检索、发帖/回复/发信/已读、线程回复、发信启动收信会话、按工作区投递、复用已有 agent、从邮件启动会话、路由鉴权、中央附件上传/下载。
 
 ## License
 

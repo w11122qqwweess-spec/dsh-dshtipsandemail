@@ -620,6 +620,41 @@ function registerTools(ctx, store, attachments) {
   });
 
   add({
+    name: `${TOOL_PREFIX}_mail_deliver`,
+    description: 'Deliver an existing mailbox message to an explicit session mailbox. Reuses the message; never creates a session.',
+    parameters: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        messageId: { type: 'string', description: 'existing mail id' },
+        sessionId: { type: 'string', description: 'explicit recipient mailbox/session id' },
+      },
+      required: ['messageId', 'sessionId'],
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          ok: { type: 'boolean', required: true },
+          messageId: { type: 'string', required: true },
+          sessionId: { type: 'string', required: true },
+        },
+      },
+      render: (_args, value) => [{ type: 'text', text: `Delivered ${value.messageId} to ${value.sessionId}.` }],
+    },
+    execute: async (args) => {
+      const messageId = text(args.messageId, 'messageId', 120);
+      const message = store.snapshot().messages.find((entry) => entry.id === messageId);
+      if (!message) throw new Error('message not found');
+      const sessionId = await startSessionFromMail(ctx, store, message, undefined, { delivery: true, targetSessionId: text(args.sessionId, 'sessionId', 120) });
+      return { ok: true, messageId, sessionId };
+    },
+    isConcurrencySafe: () => false,
+    timeoutMs: 30000,
+  });
+
+  add({
     name: `${TOOL_PREFIX}_mail_list`,
     description: 'List mailbox messages, newest first, optionally only unread or filtered by text.',
     parameters: {
@@ -906,7 +941,8 @@ function registerRoutes(ctx, store, attachments) {
             const messageId = text(body.messageId, 'messageId', 120);
             const current = store.snapshot().messages.find((message) => message.id === messageId);
             if (!current) return failure(404, 'DSHTIPS_NOT_FOUND', 'message not found');
-            const sessionId = await startSessionFromMail(ctx, store, current, typeof body.sessionId === 'string' ? body.sessionId : undefined);
+            const targetSessionId = typeof body.sessionId === 'string' && body.sessionId !== '' ? body.sessionId : undefined;
+            const sessionId = await startSessionFromMail(ctx, store, current, targetSessionId, { targetSessionId });
             return json({ ok: true, sessionId, value: store.snapshot() });
           } else {
             return failure(400, 'DSHTIPS_BAD_ACTION', 'unknown action');

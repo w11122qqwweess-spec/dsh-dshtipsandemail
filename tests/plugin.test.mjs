@@ -97,7 +97,7 @@ function request(body) {
   });
 }
 
-test('registers twelve tools and three authenticated routes', async () => {
+test('registers thirteen tools and three authenticated routes', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'dte-plugin-'));
   process.env.DSH_PROFILE_DIR = root;
   const { tools, routes } = await makeContext(root);
@@ -107,6 +107,7 @@ test('registers twelve tools and three authenticated routes', async () => {
     'dshtips_directory',
     'dshtips_download',
     'dshtips_list',
+    'dshtips_mail_deliver',
     'dshtips_mail_list',
     'dshtips_mail_read',
     'dshtips_mail_reply',
@@ -283,6 +284,18 @@ test('an inactive subagent is resumed and woken with the default model', async (
   assert.equal(prompts.length, 0);
   assert.equal(wakeups.length, 1);
   assert.match(wakeups[0].message.content[0].text, /NEW MAIL/);
+});
+
+test('an existing mail addressed to a label can be delivered to an explicit session', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'dte-plugin-'));
+  process.env.DSH_PROFILE_DIR = root;
+  const { tools, prompts } = await makeContext(root);
+  const mail = await tools.get('dshtips_mail_send').execute({ to: 'lead', subject: 'Handoff', body: 'Take this' });
+  const delivered = await tools.get('dshtips_mail_deliver').execute({ messageId: mail.id, sessionId: SESSION });
+  assert.equal(delivered.sessionId, SESSION);
+  assert.equal(prompts.length, 1);
+  assert.equal(prompts[0].sessionId, SESSION);
+  assert.match(prompts[0].content[0].text, /Handoff/);
 });
 
 test('mail_send rejects a workspace label but accepts an explicit session mailbox', async () => {
